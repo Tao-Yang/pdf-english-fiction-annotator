@@ -75,9 +75,9 @@
     <p>打开网页就能用。自动为英文原版小说的生词、短语和习语，在页面右侧空白处加上简洁的中文释义，不遮挡原文。</p>
     <div class="cta">
       <a class="btn btn-primary" href="https://huggingface.co/spaces/Tao-Yang/pdf-english-fiction-annotator">🚀 在线体验（Web App）</a>
-      <a class="btn btn-ghost" href="#deploy">▶ 如何上线（一次性）</a>
+      <a class="btn btn-ghost" href="https://render.com/deploy?repo=https://github.com/Tao-Yang/pdf-english-fiction-annotator">☁ 一键部署（免令牌）</a>
     </div>
-    <p style="margin-top:16px;font-size:.9rem;opacity:.85">若“在线体验”打不开，说明服务还未部署——按下方“如何上线”完成一次性设置即可。</p>
+    <p style="margin-top:16px;font-size:.9rem;opacity:.85">若“在线体验”打不开，说明服务还未部署——点“一键部署”，用 GitHub 登录并确认即可，全程无需下载或令牌。</p>
   </div>
 </header>
 
@@ -94,13 +94,26 @@
 
   <section id="deploy">
     <h2>如何上线（一次性设置）</h2>
-    <p>Web App 需要运行在你自己的（免费）服务上。最简单的方式是 Hugging Face Spaces，仓库已配好自动部署流程，你只需做一件事：添加一个令牌。</p>
+    <p>Web App 需要运行在一个（免费）服务上。有两种方式，任选其一即可：</p>
+
+    <h3 style="color:var(--green-dark);margin-bottom:8px">方式 A：一键部署到 Render（推荐，免令牌）</h3>
+    <p>点击下面的按钮 → 用 GitHub 账号登录 → 确认，Render 会读取仓库里的
+      <code>render.yaml</code> 和 <code>Dockerfile</code> 自动构建上线。全程无需下载、无需令牌。</p>
+    <p>
+      <a class="btn btn-primary" style="color:#fff;background:var(--green)"
+         href="https://render.com/deploy?repo=https://github.com/Tao-Yang/pdf-english-fiction-annotator">☁ Deploy to Render</a>
+    </p>
+    <p>部署完成后，Render 会给出一个 <code>https://…onrender.com</code> 网址，把它分享给用户，
+      打开即用（首次访问免费实例需数十秒唤醒，属正常现象）。</p>
+
+    <h3 style="color:var(--green-dark);margin:24px 0 8px">方式 B：Hugging Face Spaces（每次推送自动重部署）</h3>
+    <p>需要一次性添加一个令牌，之后每次推送代码都会自动重新部署：</p>
     <ol class="steps">
       <li><strong>创建令牌</strong>：打开 <a href="https://huggingface.co/settings/tokens">huggingface.co/settings/tokens</a> → New token → 类型选 <strong>Write</strong> → 复制。</li>
       <li><strong>存入 GitHub</strong>：仓库 Settings → Secrets and variables → Actions → New repository secret，名称填 <code>HF_TOKEN</code>，值粘贴令牌。</li>
       <li><strong>触发部署</strong>：仓库 Actions 页 → “Deploy to Hugging Face Space” → Run workflow。稍候即会自动创建 Space 并构建上线。</li>
     </ol>
-    <p>完成后，上方“在线体验”按钮即可直接打开；之后每次推送代码都会自动重新部署。</p>
+    <p>完成后，上方“在线体验”按钮即可直接打开。</p>
   </section>
 
   <section>

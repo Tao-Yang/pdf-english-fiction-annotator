@@ -13,6 +13,9 @@ original page content, links and bookmarks are preserved untouched.
 
 - **在线使用**：打开 [Web App](https://huggingface.co/spaces/Tao-Yang/pdf-english-fiction-annotator)
   或 [下载页](https://tao-yang.github.io/pdf-english-fiction-annotator/)，上传英文 PDF、选择难度，点击“开始注释”即可下载结果。
+- **一键部署（免令牌，推荐）**：点击
+  [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Tao-Yang/pdf-english-fiction-annotator)
+  ，用 GitHub 登录并确认，Render 会读取仓库里的 `render.yaml` + `Dockerfile` 自动构建上线，随后分享它给出的 `https://…onrender.com` 网址即可，用户打开即用、无需下载。
 - **本地运行网页版**：
 
   ```bash
@@ -20,7 +23,7 @@ original page content, links and bookmarks are preserved untouched.
   python webapp/app.py          # 打开 http://localhost:7860
   ```
 
-- **Docker 一键部署**（Hugging Face Spaces / Render / Railway 等）：
+- **Docker 部署**（Hugging Face Spaces / Render / Railway 等）：
 
   ```bash
   docker build -t pdf-annotator .

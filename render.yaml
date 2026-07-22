@@ -1,0 +1,12 @@
+# Render Blueprint — one-click deploy, no token required.
+# Click the "Deploy to Render" button (see README / landing page),
+# sign in with GitHub, and Render builds this repo's Dockerfile and
+# publishes the web app at a public URL. End users just open that URL.
+services:
+  - type: web
+    name: pdf-english-fiction-annotator
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /
