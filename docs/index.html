@@ -72,9 +72,9 @@
 <header>
   <div class="wrap">
     <h1>PDF 英文小说中文注释工具</h1>
-    <p>点一下就能用。自动为英文原版小说的生词、短语和习语，在页面右侧空白处加上简洁的中文释义，不遮挡原文。</p>
+    <p>打开网页就能用。自动为英文原版小说的生词、短语和习语，在页面右侧空白处加上简洁的中文释义，不遮挡原文。</p>
     <div class="cta">
-      <a class="btn btn-primary" href="https://github.com/Tao-Yang/pdf-english-fiction-annotator/releases/latest/download/PDF-Annotator.exe">⬇ 下载 Windows 版 (.exe)</a>
+      <a class="btn btn-primary" href="https://huggingface.co/spaces/Tao-Yang/pdf-english-fiction-annotator">🚀 在线体验（Web App）</a>
       <a class="btn btn-ghost" href="https://github.com/Tao-Yang/pdf-english-fiction-annotator">查看源码 (GitHub)</a>
     </div>
   </div>
@@ -85,9 +85,9 @@
   <section>
     <h2>三步开始使用</h2>
     <ol class="steps">
-      <li><strong>下载并双击 <code>PDF-Annotator.exe</code></strong>（或下载源码后双击 <code>Start-Annotator.bat</code>）。首次运行会自动准备词典与语言数据，请保持联网。</li>
-      <li><strong>选择一个英文 PDF</strong>，挑选难度级别（CEFR A1–C2），如需可填写正文起始页。</li>
-      <li><strong>点击“开始注释”</strong>。完成后会生成一个带中文注释的新 PDF，原书排版与目录链接保持不变。</li>
+      <li><strong>打开 <a href="https://huggingface.co/spaces/Tao-Yang/pdf-english-fiction-annotator">在线 Web App</a></strong>，无需安装任何软件。</li>
+      <li><strong>上传一个英文 PDF</strong>，挑选难度级别（CEFR A1–C2），如需可填写正文起始页。</li>
+      <li><strong>点击“开始注释”</strong>，稍候即可下载带中文注释的新 PDF，原书排版与目录链接保持不变。</li>
     </ol>
   </section>
 
@@ -114,8 +114,14 @@
   </section>
 
   <section>
-    <h2>喜欢命令行？</h2>
-    <p>本工具同样提供 CLI，适合批量处理：</p>
+    <h2>喜欢命令行 / 想自建服务？</h2>
+    <p>本地跑网页版（Gradio）：</p>
+    <pre><code>pip install -r webapp/requirements.txt
+python webapp/app.py        # 打开 http://localhost:7860</code></pre>
+    <p>或用 Docker 一键部署到 Hugging Face Spaces / Render / Railway：</p>
+    <pre><code>docker build -t pdf-annotator .
+docker run -p 7860:7860 pdf-annotator</code></pre>
+    <p>纯命令行批量处理：</p>
     <pre><code>pip install -e .
 python -m scripts.download_ecdict          # 首次下载词典
 annotate-fiction novel.pdf --level B2</code></pre>
