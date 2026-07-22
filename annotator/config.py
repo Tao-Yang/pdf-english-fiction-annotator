@@ -5,8 +5,50 @@ of truth. Default values reproduce the settings validated on an 875-page
 English novel (CEFR B2, Simplified Chinese, green raster labels).
 """
 
+import glob
+import os
 from dataclasses import dataclass, field
 from typing import Tuple
+
+
+def _default_font_path() -> str:
+    """Return a CJK-capable font path that exists on the current OS.
+
+    Works on Windows (dev), Linux containers (Render / HF Spaces, where
+    ``fonts-noto-cjk`` is installed) and macOS. An explicit override may be
+    given via the ``ANNOTATOR_FONT_PATH`` environment variable.
+    """
+    override = os.environ.get("ANNOTATOR_FONT_PATH")
+    candidates = []
+    if override:
+        candidates.append(override)
+    candidates += [
+        # Windows
+        r"C:\Windows\Fonts\msyh.ttc",
+        r"C:\Windows\Fonts\simhei.ttf",
+        # Linux (Debian/Ubuntu fonts-noto-cjk)
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        # macOS
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/STHeiti Medium.ttc",
+    ]
+    for path in candidates:
+        if path and os.path.isfile(path):
+            return path
+    # Last resort: scan common font dirs for any Noto CJK face.
+    for pattern in (
+        "/usr/share/fonts/**/NotoSansCJK*.*",
+        "/usr/share/fonts/**/NotoSerifCJK*.*",
+        "/usr/share/fonts/**/*CJK*.*",
+    ):
+        matches = glob.glob(pattern, recursive=True)
+        if matches:
+            return matches[0]
+    # Fall back to the Windows path so dev machines keep working; the renderer
+    # will raise a clear error if it is genuinely missing.
+    return r"C:\Windows\Fonts\msyh.ttc"
 
 
 # CEFR reading levels mapped to a wordfreq Zipf threshold. A word is treated as
@@ -57,7 +99,9 @@ class AnnotationConfig:
     # Rasterisation DPI-equivalent scale for label PNGs. Higher = crisper text.
     raster_scale: float = 3.0
     # Font used to render Chinese glyphs. Must be a CJK-capable font file.
-    font_path: str = r"C:\Windows\Fonts\msyh.ttc"
+    # Resolved per-OS (Windows / Linux container / macOS); override with the
+    # ANNOTATOR_FONT_PATH environment variable.
+    font_path: str = field(default_factory=_default_font_path)
     # Green used for the underline, left-edge marker and label text.
     green_rgb_pdf: Tuple[float, float, float] = (0.086, 0.510, 0.231)
     green_hex: str = "#16823b"

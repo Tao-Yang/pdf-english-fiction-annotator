@@ -70,9 +70,14 @@ def annotate(pdf_file, level, start_page, progress=gr.Progress()):
     config = AnnotationConfig(cefr_level=level, ecdict_path=ECDICT_PATH)
     if start_page is not None and str(start_page).strip() != "":
         try:
-            config.start_page = int(start_page)
+            # UI value is a 1-based page number; config.start_page is 0-based.
+            config.start_page = max(0, int(start_page) - 1)
         except (TypeError, ValueError):
-            pass
+            config.start_page = 0
+    else:
+        # Web uploads are usually short excerpts, so annotate from the start by
+        # default instead of skipping front matter of a specific book.
+        config.start_page = 0
 
     progress(0.4, desc="正在注释，请稍候…")
     written = annotate_pdf(
@@ -108,7 +113,7 @@ with gr.Blocks(title="PDF 英文小说中文注释工具", theme=gr.themes.Soft(
             )
             start_page = gr.Number(
                 label="正文起始页（可选）",
-                info="留空则默认从第 143 页开始，自动跳过前置页",
+                info="从第几页开始注释（1 = 第一页）。留空则从第一页开始，可填大一点以跳过前置页",
                 value=None,
                 precision=0,
             )
