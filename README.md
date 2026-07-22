@@ -56,7 +56,7 @@ pdf-english-fiction-annotator/
 需要 Python 3.7+。
 
 ```bash
-git clone https://github.com/your-name/pdf-english-fiction-annotator.git
+git clone https://github.com/Tao-Yang/pdf-english-fiction-annotator.git
 cd pdf-english-fiction-annotator
 
 python -m venv .venv

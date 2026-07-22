@@ -36,8 +36,8 @@ dependencies = [
 annotate-fiction = "annotator.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/your-name/pdf-english-fiction-annotator"
-Issues = "https://github.com/your-name/pdf-english-fiction-annotator/issues"
+Homepage = "https://github.com/Tao-Yang/pdf-english-fiction-annotator"
+Issues = "https://github.com/Tao-Yang/pdf-english-fiction-annotator/issues"
 
 [tool.setuptools]
 packages = ["annotator"]
