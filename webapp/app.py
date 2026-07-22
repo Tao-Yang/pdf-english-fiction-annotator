@@ -16,7 +16,7 @@ on first use, caching them under a writable data directory.
 import os
 import sys
 import tempfile
-import urllib.request
+import threading
 
 import gradio as gr
 
@@ -26,34 +26,37 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from annotator.config import CEFR_ZIPF_THRESHOLD, AnnotationConfig  # noqa: E402
 from annotator.nltk_setup import ensure_nltk_data  # noqa: E402
 from annotator.pipeline import annotate_pdf  # noqa: E402
-
-ECDICT_URL = "https://raw.githubusercontent.com/skywind3000/ECDICT/master/ecdict.csv"
+from prepare_assets import DB_FILENAME, ensure_ecdict_database  # noqa: E402
 
 # A writable directory for the cached dictionary. HF Spaces / most PaaS allow
 # writing under the app dir or /tmp.
 DATA_DIR = os.environ.get("ANNOTATOR_DATA_DIR") or os.path.join(
     tempfile.gettempdir(), "pdf-annotator-data"
 )
-ECDICT_PATH = os.path.join(DATA_DIR, "ecdict.csv")
+ECDICT_PATH = os.path.join(DATA_DIR, DB_FILENAME)
 
 _READY = False
+_ASSET_LOCK = threading.Lock()
 
 
 def _ensure_assets(progress=None) -> None:
-    """Download NLTK data and the ECDICT dictionary once."""
+    """Prepare NLTK data and the disk-backed ECDICT database once."""
     global _READY
     if _READY:
         return
-    if progress:
-        progress(0.05, desc="准备语言数据 (NLTK)…")
-    ensure_nltk_data()
-
-    if not (os.path.isfile(ECDICT_PATH) and os.path.getsize(ECDICT_PATH) > 1_000_000):
-        os.makedirs(DATA_DIR, exist_ok=True)
+    with _ASSET_LOCK:
+        if _READY:
+            return
         if progress:
-            progress(0.15, desc="下载词典 (约 65 MB)…")
-        urllib.request.urlretrieve(ECDICT_URL, ECDICT_PATH)
-    _READY = True
+            progress(0.05, desc="准备语言数据 (NLTK)…")
+        ensure_nltk_data()
+
+        def update_status(message):
+            if progress:
+                progress(0.2, desc=message)
+
+        ensure_ecdict_database(DATA_DIR, update_status)
+        _READY = True
 
 
 def annotate(pdf_file, level, start_page, progress=gr.Progress()):
@@ -79,13 +82,16 @@ def annotate(pdf_file, level, start_page, progress=gr.Progress()):
         # default instead of skipping front matter of a specific book.
         config.start_page = 0
 
-    progress(0.4, desc="正在注释，请稍候…")
-    written = annotate_pdf(
-        input_path=src_path,
-        output_path=out_path,
-        config=config,
-        progress=False,
-    )
+    progress(0.4, desc="正在读取词汇并生成注释…")
+    try:
+        written = annotate_pdf(
+            input_path=src_path,
+            output_path=out_path,
+            config=config,
+            progress=False,
+        )
+    except Exception as exc:
+        raise gr.Error("注释失败：%s" % exc) from exc
     progress(1.0, desc="完成")
     return written
 
@@ -99,7 +105,7 @@ with gr.Blocks(title="PDF 英文小说中文注释工具", theme=gr.themes.Soft(
         中文释义。注释放在页面右侧扩展出的空白处，**不遮挡原文**，原书排版与目录
         链接保持不变。
 
-        > 首次注释会自动下载词典（约 65 MB），可能需要等待一会儿。
+        > 词典已在服务端预先建立索引。免费服务器首次唤醒可能需要几十秒。
         """
     )
     with gr.Row():

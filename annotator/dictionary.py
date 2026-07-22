@@ -11,6 +11,7 @@ requested. Only the ``word`` and ``translation`` columns are retained.
 import csv
 import os
 import re
+import sqlite3
 from typing import Dict, Optional
 
 
@@ -26,6 +27,34 @@ class Dictionary:
     def __init__(self, ecdict_path: str) -> None:
         self._path = ecdict_path
         self._table: Optional[Dict[str, str]] = None
+        self._db: Optional[sqlite3.Connection] = None
+        self._cache: Dict[str, Optional[str]] = {}
+
+    def _raw_gloss(self, word: str) -> Optional[str]:
+        key = word.strip().lower()
+        if key in self._cache:
+            return self._cache[key]
+
+        if self._path.lower().endswith((".sqlite", ".sqlite3", ".db")):
+            if self._db is None:
+                if not os.path.isfile(self._path):
+                    raise FileNotFoundError("ECDICT database not found at %r" % self._path)
+                self._db = sqlite3.connect(
+                    "file:%s?mode=ro" % os.path.abspath(self._path).replace("\\", "/"),
+                    uri=True,
+                )
+            row = self._db.execute(
+                "SELECT translation FROM entries WHERE word = ?", (key,)
+            ).fetchone()
+            raw = row[0] if row else None
+        else:
+            raw = self._ensure_loaded().get(key)
+
+        # Keep repeated phrase / lemma probes off disk while bounding memory.
+        if len(self._cache) >= 8192:
+            self._cache.clear()
+        self._cache[key] = raw
+        return raw
 
     def _ensure_loaded(self) -> Dict[str, str]:
         if self._table is not None:
@@ -57,8 +86,7 @@ class Dictionary:
         The raw ECDICT translation may contain several newline-separated senses
         with POS prefixes; this trims it to the first one or two concise senses.
         """
-        table = self._ensure_loaded()
-        raw = table.get(word.strip().lower())
+        raw = self._raw_gloss(word)
         if not raw:
             return None
         return self._condense(raw)

@@ -17,11 +17,16 @@ RUN pip install --no-cache-dir -r /app/webapp/requirements.txt
 COPY annotator /app/annotator
 COPY webapp /app/webapp
 
-# Cache dictionary/NLTK data in a writable location.
+# Prebuild the disk-backed dictionary and NLTK data into the image. This avoids
+# downloading a 65 MB CSV and expanding it into a huge Python dict on Render's
+# memory-constrained free instances.
 ENV ANNOTATOR_DATA_DIR=/app/.cache/data \
     NLTK_DATA=/app/.cache/nltk_data \
     PORT=7860
-RUN mkdir -p /app/.cache/data /app/.cache/nltk_data && chmod -R 777 /app/.cache
+RUN mkdir -p /app/.cache/data /app/.cache/nltk_data \
+    && python webapp/prepare_assets.py --data-dir /app/.cache/data \
+    && python -c "from annotator.nltk_setup import ensure_nltk_data; ensure_nltk_data()" \
+    && chmod -R 777 /app/.cache
 
 EXPOSE 7860
 
