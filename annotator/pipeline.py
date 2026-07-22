@@ -222,6 +222,26 @@ def _draw(
         last_bottom = bottom
 
         box = fitz.Rect(margin_x, top, margin_x + label_w, bottom)
+
+        # Restore the visual leader used by the original annotated edition.
+        # A short elbow leaves the underline, then points to the vertical
+        # centre of the margin label. Draw it before the PNG so its endpoint
+        # tucks neatly underneath the label's green edge marker.
+        label_y = (top + bottom) / 2.0
+        elbow_x = min(content_width - 2, max(rect.x1 + 4, content_width - 18))
+        page.draw_polyline(
+            [
+                fitz.Point(rect.x1, y),
+                fitz.Point(elbow_x, y),
+                fitz.Point(content_width + 2, label_y),
+                fitz.Point(margin_x + 1, label_y),
+            ],
+            color=green,
+            width=config.leader_line_width,
+            dashes="[2 2] 0",
+            lineCap=1,
+            lineJoin=1,
+        )
         page.insert_image(box, stream=p.png, keep_proportion=False)
 
 

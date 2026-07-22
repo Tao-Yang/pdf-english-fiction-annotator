@@ -110,6 +110,8 @@ class AnnotationConfig:
     box_hex: str = "#fff3a8"
     # Underline thickness in points.
     underline_width: float = 0.8
+    # Thin leader line from the underlined word to its margin annotation.
+    leader_line_width: float = 0.45
 
     # --- Dictionary ---------------------------------------------------------
     # Path to ECDICT csv (word,phonetic,definition,translation,pos,...).
