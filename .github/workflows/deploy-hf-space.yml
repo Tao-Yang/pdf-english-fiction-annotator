@@ -1,0 +1,69 @@
+name: Deploy to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "annotator/**"
+      - "webapp/**"
+      - "Dockerfile"
+      - ".huggingface/**"
+      - ".github/workflows/deploy-hf-space.yml"
+  workflow_dispatch:
+
+# Set these in the repo (Settings -> Secrets and variables -> Actions):
+#   Secret   HF_TOKEN     a Hugging Face access token with WRITE permission
+#   Variable HF_SPACE     the Space id, e.g. Tao-Yang/pdf-english-fiction-annotator
+env:
+  HF_SPACE: ${{ vars.HF_SPACE || 'Tao-Yang/pdf-english-fiction-annotator' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Ensure the Space exists
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::error::HF_TOKEN secret is not set. Create a write token at https://huggingface.co/settings/tokens and add it as an Actions secret named HF_TOKEN."
+            exit 1
+          fi
+          pip install --quiet "huggingface_hub>=0.23"
+          python - <<'PY'
+          import os
+          from huggingface_hub import create_repo
+          create_repo(
+              repo_id=os.environ["HF_SPACE"],
+              repo_type="space",
+              space_sdk="docker",
+              exist_ok=True,
+              token=os.environ["HF_TOKEN"],
+          )
+          print("Space ready:", os.environ["HF_SPACE"])
+          PY
+
+      - name: Assemble Space contents
+        run: |
+          rm -rf hf && mkdir hf
+          cp -r Dockerfile annotator webapp hf/
+          cp .huggingface/README.md hf/README.md
+
+      - name: Push to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          cd hf
+          git init -q
+          git checkout -q -b main
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git commit -q -m "Deploy from GitHub ${{ github.sha }}"
+          git push -f "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" main
