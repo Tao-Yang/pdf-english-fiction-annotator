@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pdf-english-fiction-annotator"
+version = "1.0.0"
+description = "Add concise, non-obstructive Chinese margin annotations to English-fiction PDFs."
+readme = "README.md"
+requires-python = ">=3.7"
+license = { file = "LICENSE" }
+authors = [{ name = "pdf-english-fiction-annotator contributors" }]
+keywords = [
+    "pdf",
+    "annotation",
+    "chinese",
+    "vocabulary",
+    "english-fiction",
+    "language-learning",
+    "pymupdf",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Text Processing :: Linguistic",
+    "Topic :: Education",
+]
+dependencies = [
+    "PyMuPDF>=1.21.1",
+    "wordfreq>=3.0.3",
+    "nltk>=3.8.1",
+    "Pillow>=9.5.0",
+]
+
+[project.scripts]
+annotate-fiction = "annotator.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/your-name/pdf-english-fiction-annotator"
+Issues = "https://github.com/your-name/pdf-english-fiction-annotator/issues"
+
+[tool.setuptools]
+packages = ["annotator"]

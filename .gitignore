@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Downloaded dictionary (large, fetched on demand)
+data/ecdict.csv
+data/*.7z
+
+# Generated output
+output/
+*-annotated*.pdf
+*.annotations.json
+
+# NLTK data cache
+nltk_data/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
