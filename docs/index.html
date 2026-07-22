@@ -75,8 +75,9 @@
     <p>打开网页就能用。自动为英文原版小说的生词、短语和习语，在页面右侧空白处加上简洁的中文释义，不遮挡原文。</p>
     <div class="cta">
       <a class="btn btn-primary" href="https://huggingface.co/spaces/Tao-Yang/pdf-english-fiction-annotator">🚀 在线体验（Web App）</a>
-      <a class="btn btn-ghost" href="https://github.com/Tao-Yang/pdf-english-fiction-annotator">查看源码 (GitHub)</a>
+      <a class="btn btn-ghost" href="#deploy">▶ 如何上线（一次性）</a>
     </div>
+    <p style="margin-top:16px;font-size:.9rem;opacity:.85">若“在线体验”打不开，说明服务还未部署——按下方“如何上线”完成一次性设置即可。</p>
   </div>
 </header>
 
@@ -85,10 +86,21 @@
   <section>
     <h2>三步开始使用</h2>
     <ol class="steps">
-      <li><strong>打开 <a href="https://huggingface.co/spaces/Tao-Yang/pdf-english-fiction-annotator">在线 Web App</a></strong>，无需安装任何软件。</li>
+      <li><strong>打开 <a href="https://huggingface.co/spaces/Tao-Yang/pdf-english-fiction-annotator">在线 Web App</a></strong>（若尚未上线，先按下方“如何上线”部署），无需安装任何软件。</li>
       <li><strong>上传一个英文 PDF</strong>，挑选难度级别（CEFR A1–C2），如需可填写正文起始页。</li>
       <li><strong>点击“开始注释”</strong>，稍候即可下载带中文注释的新 PDF，原书排版与目录链接保持不变。</li>
     </ol>
+  </section>
+
+  <section id="deploy">
+    <h2>如何上线（一次性设置）</h2>
+    <p>Web App 需要运行在你自己的（免费）服务上。最简单的方式是 Hugging Face Spaces，仓库已配好自动部署流程，你只需做一件事：添加一个令牌。</p>
+    <ol class="steps">
+      <li><strong>创建令牌</strong>：打开 <a href="https://huggingface.co/settings/tokens">huggingface.co/settings/tokens</a> → New token → 类型选 <strong>Write</strong> → 复制。</li>
+      <li><strong>存入 GitHub</strong>：仓库 Settings → Secrets and variables → Actions → New repository secret，名称填 <code>HF_TOKEN</code>，值粘贴令牌。</li>
+      <li><strong>触发部署</strong>：仓库 Actions 页 → “Deploy to Hugging Face Space” → Run workflow。稍候即会自动创建 Space 并构建上线。</li>
+    </ol>
+    <p>完成后，上方“在线体验”按钮即可直接打开；之后每次推送代码都会自动重新部署。</p>
   </section>
 
   <section>
