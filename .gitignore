@@ -13,6 +13,7 @@ build/
 dist/
 *.egg-info/
 .eggs/
+*.spec
 
 # Downloaded dictionary (large, fetched on demand)
 data/ecdict.csv

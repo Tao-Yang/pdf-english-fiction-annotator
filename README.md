@@ -7,6 +7,21 @@ original page content, links and bookmarks are preserved untouched.
 
 ---
 
+## 🖱️ 一键使用 (Windows) / One-click app
+
+不想碰命令行？直接用图形界面：
+
+- **下载可执行文件**：前往 [下载页面](https://tao-yang.github.io/pdf-english-fiction-annotator/) 或
+  [Releases](https://github.com/Tao-Yang/pdf-english-fiction-annotator/releases/latest)，
+  下载 `PDF-Annotator.exe`，双击运行。
+- **或从源码运行**：克隆本仓库后，双击 **`Start-Annotator.bat`**（首次会自动创建环境、安装依赖并下载词典）。
+
+在窗口里选择英文 PDF、挑选难度（CEFR），点击“开始注释”即可。首次运行会自动下载词典（约 65 MB）与语言数据，请保持联网。
+
+也可从命令行启动图形界面：`python -m annotator.gui`。
+
+---
+
 ## Features / 功能
 
 - **词语难度自适应** — 用 `wordfreq` 的 Zipf 频率结合 CEFR 等级，只标注对目标读者偏难的实词。
@@ -40,10 +55,15 @@ pdf-english-fiction-annotator/
 │   ├── renderer.py           # PIL 中文标签栅格化
 │   ├── pipeline.py           # 主流程：扩页、绘制、复制链接/书签
 │   ├── nltk_setup.py         # 按需下载 NLTK 语料
+│   ├── gui.py                # 图形界面（一键使用）
 │   └── cli.py                # 命令行入口
 ├── scripts/
 │   ├── download_ecdict.py    # 下载 ECDICT 词典
 │   └── fix_links.py          # 独立工具：把源 PDF 链接补回重建后的 PDF
+├── docs/                     # GitHub Pages 下载页
+├── .github/workflows/        # 构建 exe + 部署 Pages 的自动化流程
+├── app_launcher.py           # 打包 exe 用的入口
+├── Start-Annotator.bat       # Windows 一键启动器
 ├── data/                     # ECDICT csv 放这里（不入库）
 ├── SKILL.md                  # 方法论说明（VS Code Agent Skill）
 ├── requirements.txt
