@@ -18,6 +18,7 @@ The output PDF has the same page count and navigation as the source.
 """
 
 import json
+import multiprocessing
 import os
 import shutil
 import tempfile
@@ -451,6 +452,30 @@ def annotate_pdf_parallel(
                 # accumulate in any one process. ``max_tasks_per_child``
                 # requires Python >= 3.11 (this app's Docker image pins
                 # exactly that), so no availability check is needed here.
+                #
+                # IMPORTANT: this must run with the "spawn" (or
+                # "forkserver") start method, never the POSIX default
+                # "fork". When a worker recycles mid-run under "fork",
+                # CPython replaces it by fork()-ing a new child *after* the
+                # executor's background management thread is already
+                # running, which is exactly the classic "fork a
+                # multi-threaded process" deadlock hazard (see CPython
+                # gh-90622 / gh-115634 -- an upstream fix for this specific
+                # max_tasks_per_child + fork combination only landed in
+                # very recent CPython, long after 3.11). We hit this in
+                # production: the webapp hung permanently (not just
+                # slowly) partway through a long book once
+                # ``max_tasks_per_child`` started actually recycling a
+                # worker, reproducing the exact silent-freeze symptom this
+                # parameter was meant to fix in the first place. "spawn"
+                # starts each worker via a fresh interpreter (no fork)
+                # instead, which sidesteps that deadlock class entirely.
+                # Each worker already pays its own NLTK/wordfreq/dictionary
+                # load cost inside ``_init_worker`` regardless of start
+                # method (no copy-on-write sharing is attempted), so
+                # switching away from "fork" costs only slightly slower
+                # process startup, not extra steady-state memory.
+                mp_context=multiprocessing.get_context("spawn"),
                 max_tasks_per_child=20,
             ) as pool:
                 futures = {
