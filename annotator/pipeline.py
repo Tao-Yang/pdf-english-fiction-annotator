@@ -19,6 +19,9 @@ The output PDF has the same page count and navigation as the source.
 
 import json
 import os
+import shutil
+import tempfile
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Callable, Dict, List, Optional, Tuple
 
 import fitz  # PyMuPDF
@@ -144,6 +147,180 @@ def annotate_pdf(
         for ckpt_path in ckpt_paths:
             if os.path.exists(ckpt_path):
                 os.remove(ckpt_path)
+
+    if report_path:
+        with open(report_path, "w", encoding="utf-8") as fh:
+            json.dump(stats, fh, ensure_ascii=False, indent=2)
+
+    print(
+        "Done: %d/%d pages annotated, %d notes -> %s"
+        % (stats["pages_annotated"], stats["pages"], stats["annotations"], output_path)
+    )
+    return output_path
+
+
+# --- Parallel, chunked variant -------------------------------------------
+#
+# Splits the book into ``chunk_pages``-page slices and annotates each slice
+# in its own worker process, then merges the finished slices back into one
+# output PDF in original page order. Two independent benefits:
+#
+# 1. Speed: multiple chunks are annotated concurrently instead of one page
+#    at a time in a single process (real parallelism, since NLTK/wordfreq
+#    word-selection is plain CPU-bound Python and would not benefit from
+#    threading due to the GIL).
+# 2. Memory: each worker only ever holds a small (``chunk_pages``-page)
+#    fitz.Document in memory, so there is no need for the sequential path's
+#    mid-run checkpoint/reopen dance to bound memory on a long book.
+#
+# The trade-off is that every worker *process* pays its own one-time cost of
+# loading NLTK data, wordfreq, and opening the dictionary (~150-200MB
+# measured on the real target book) -- so ``max_workers`` should stay
+# conservative on memory-constrained hosts (e.g. Render's free 512MB tier).
+# ``_init_worker`` amortizes that cost across every chunk routed to a given
+# worker process (built once, not once per chunk).
+
+_worker_config: Optional[AnnotationConfig] = None
+_worker_selector: Optional[WordSelector] = None
+_worker_renderer: Optional[LabelRenderer] = None
+
+
+def _init_worker(config: AnnotationConfig) -> None:
+    """Pool initializer: build the per-process Dictionary/Selector/Renderer.
+
+    Runs once when each worker process starts (or once per process, for the
+    default "fork" start method used on Linux, which is what Render / HF
+    Spaces run on), so the heavy one-time NLTK/wordfreq/dictionary load is
+    not repeated for every chunk handled by that worker.
+    """
+    global _worker_config, _worker_selector, _worker_renderer
+    _worker_config = config
+    dictionary = Dictionary(config.ecdict_path, config.historical_glossary_path)
+    _worker_selector = WordSelector(config, dictionary)
+    _worker_renderer = LabelRenderer(config)
+
+
+def _annotate_chunk(
+    args: Tuple[str, int, int, str]
+) -> Tuple[int, int, int, int]:
+    """Annotate pages ``[page_start, page_end)`` of ``input_path``.
+
+    Writes the resulting slice to ``chunk_out_path`` and returns
+    ``(page_start, page_end, pages_annotated, annotations)``. Runs inside a
+    worker process; relies on the globals set by :func:`_init_worker`.
+    """
+    input_path, page_start, page_end, chunk_out_path = args
+    config = _worker_config
+    selector = _worker_selector
+    renderer = _worker_renderer
+
+    src = fitz.open(input_path)
+    out = fitz.open()
+    pages_annotated = 0
+    annotations = 0
+    try:
+        for pno in range(page_start, page_end):
+            page_doc, annotated = _build_page(src[pno], selector, renderer, config, pno)
+            out.insert_pdf(page_doc, from_page=0, to_page=0)
+            page_doc.close()
+            if annotated:
+                pages_annotated += 1
+                annotations += annotated
+        out.save(chunk_out_path, garbage=4, deflate=True)
+    finally:
+        out.close()
+        src.close()
+    return page_start, page_end, pages_annotated, annotations
+
+
+def annotate_pdf_parallel(
+    input_path: str,
+    output_path: Optional[str] = None,
+    config: Optional[AnnotationConfig] = None,
+    report_path: Optional[str] = None,
+    progress_cb: Optional[Callable[[int, int], None]] = None,
+    chunk_pages: int = 10,
+    max_workers: Optional[int] = None,
+) -> str:
+    """Annotate ``input_path`` by processing ``chunk_pages``-page slices
+    concurrently across worker processes, then merging them back into a
+    single ``output_path`` PDF in original page order.
+
+    ``progress_cb(pages_done, total_pages)`` is called as each chunk
+    finishes (coarser-grained than :func:`annotate_pdf`, which reports after
+    every single page, since whole chunks complete at a time and may finish
+    out of order).
+
+    ``max_workers`` defaults to ``min(4, os.cpu_count() or 1)``. Keep this
+    conservative on memory-constrained hosts: each worker independently
+    loads NLTK/wordfreq/the dictionary (~150-200MB), so ``max_workers=2``
+    roughly doubles that fixed overhead versus a single sequential run.
+    """
+    config = config or AnnotationConfig()
+    if output_path is None:
+        stem, _ext = os.path.splitext(input_path)
+        output_path = "%s-annotated-%s.pdf" % (stem, config.cefr_level.upper())
+    if chunk_pages < 1:
+        raise ValueError("chunk_pages must be >= 1")
+    max_workers = max_workers or min(4, os.cpu_count() or 1)
+
+    src = fitz.open(input_path)
+    total_pages = len(src)
+    toc = src.get_toc(simple=False)
+    src.close()
+
+    chunk_ranges = [
+        (start, min(start + chunk_pages, total_pages))
+        for start in range(0, total_pages, chunk_pages)
+    ]
+
+    work_dir = tempfile.mkdtemp(prefix="annotator-chunks-")
+    chunk_paths = {
+        start: os.path.join(work_dir, "chunk-%06d-%06d.pdf" % (start, end))
+        for start, end in chunk_ranges
+    }
+
+    stats = {
+        "input": input_path,
+        "output": output_path,
+        "pages": total_pages,
+        "pages_annotated": 0,
+        "annotations": 0,
+        "cefr_level": config.cefr_level.upper(),
+    }
+
+    try:
+        pages_done = 0
+        with ProcessPoolExecutor(
+            max_workers=max_workers, initializer=_init_worker, initargs=(config,)
+        ) as pool:
+            futures = {
+                pool.submit(
+                    _annotate_chunk, (input_path, start, end, chunk_paths[start])
+                ): (start, end)
+                for start, end in chunk_ranges
+            }
+            for future in as_completed(futures):
+                start, end = futures[future]
+                _, _, pages_annotated, annotations = future.result()
+                stats["pages_annotated"] += pages_annotated
+                stats["annotations"] += annotations
+                pages_done += end - start
+                if progress_cb:
+                    progress_cb(pages_done - 1, total_pages)
+
+        # Merge chunks back in original page order.
+        out = fitz.open()
+        for start, end in chunk_ranges:
+            chunk_doc = fitz.open(chunk_paths[start])
+            out.insert_pdf(chunk_doc)
+            chunk_doc.close()
+        if toc:
+            out.set_toc(toc)
+        out.save(output_path, garbage=4, deflate=True)
+        out.close()
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
 
     if report_path:
         with open(report_path, "w", encoding="utf-8") as fh:

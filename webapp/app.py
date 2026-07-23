@@ -28,8 +28,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from annotator.config import AnnotationConfig  # noqa: E402
 from annotator.nltk_setup import ensure_nltk_data  # noqa: E402
-from annotator.pipeline import annotate_pdf  # noqa: E402
+from annotator.pipeline import annotate_pdf, annotate_pdf_parallel  # noqa: E402
 from prepare_assets import DB_FILENAME, ensure_ecdict_database  # noqa: E402
+
+# Optional chunked/concurrent annotation. Splitting the book into small
+# page-range chunks bounds each worker's memory to a few pages instead of
+# the whole book, and multiple chunks can be annotated at once on hosts with
+# more than one CPU. Each worker independently pays a one-time ~150-200MB
+# NLTK/wordfreq/dictionary load, so keep ANNOTATOR_MAX_WORKERS conservative
+# on memory-constrained hosts (e.g. Render's free 512MB tier) -- the default
+# of 1 keeps today's proven sequential behavior; raise it only on hosts with
+# known extra headroom (RAM and CPU cores).
+ANNOTATOR_MAX_WORKERS = int(os.environ.get("ANNOTATOR_MAX_WORKERS", "1"))
+ANNOTATOR_CHUNK_PAGES = int(os.environ.get("ANNOTATOR_CHUNK_PAGES", "10"))
 
 # A writable directory for the cached dictionary. HF Spaces / most PaaS allow
 # writing under the app dir or /tmp.
@@ -630,13 +641,23 @@ def annotate(pdf_file, dictionary, start_page, progress=gr.Progress()):
         progress(frac, desc="正在生成注释：第 %d / %d 页…" % (pno + 1, total))
 
     try:
-        written = annotate_pdf(
-            input_path=src_path,
-            output_path=out_path,
-            config=config,
-            progress=False,
-            progress_cb=_on_page,
-        )
+        if ANNOTATOR_MAX_WORKERS > 1:
+            written = annotate_pdf_parallel(
+                input_path=src_path,
+                output_path=out_path,
+                config=config,
+                progress_cb=_on_page,
+                chunk_pages=ANNOTATOR_CHUNK_PAGES,
+                max_workers=ANNOTATOR_MAX_WORKERS,
+            )
+        else:
+            written = annotate_pdf(
+                input_path=src_path,
+                output_path=out_path,
+                config=config,
+                progress=False,
+                progress_cb=_on_page,
+            )
     except Exception as exc:
         raise gr.Error("注释失败：%s" % exc) from exc
     progress(1.0, desc="完成")

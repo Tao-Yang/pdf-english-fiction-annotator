@@ -17,7 +17,7 @@ import sys
 
 from .config import CEFR_ZIPF_THRESHOLD, AnnotationConfig
 from .nltk_setup import ensure_nltk_data
-from .pipeline import annotate_pdf
+from .pipeline import annotate_pdf, annotate_pdf_parallel
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -77,6 +77,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--quiet", action="store_true", help="Suppress per-page progress output."
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Split the book into chunks and annotate them concurrently across "
+        "this many worker processes (default: 1, i.e. the plain sequential "
+        "pipeline). Each worker pays its own one-time NLTK/wordfreq/dictionary "
+        "load (~150-200MB), so keep this conservative on memory-constrained "
+        "hosts.",
+    )
+    parser.add_argument(
+        "--chunk-pages",
+        type=int,
+        default=10,
+        help="Pages per chunk when --workers > 1 (default: 10).",
+    )
     return parser
 
 
@@ -103,13 +119,23 @@ def main(argv=None) -> int:
     ensure_nltk_data()
 
     try:
-        annotate_pdf(
-            input_path=args.input,
-            output_path=args.output,
-            config=config,
-            report_path=args.report,
-            progress=not args.quiet,
-        )
+        if args.workers > 1:
+            annotate_pdf_parallel(
+                input_path=args.input,
+                output_path=args.output,
+                config=config,
+                report_path=args.report,
+                chunk_pages=args.chunk_pages,
+                max_workers=args.workers,
+            )
+        else:
+            annotate_pdf(
+                input_path=args.input,
+                output_path=args.output,
+                config=config,
+                report_path=args.report,
+                progress=not args.quiet,
+            )
     except FileNotFoundError as exc:
         print("Error: %s" % exc, file=sys.stderr)
         return 2
