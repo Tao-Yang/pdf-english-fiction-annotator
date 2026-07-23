@@ -24,7 +24,13 @@ def ensure_nltk_data(quiet: bool = True) -> None:
     for resource, package in _REQUIRED:
         try:
             nltk.data.find(resource)
-        except LookupError:
+        except (LookupError, OSError):
+            # Some NLTK 3.8.x releases mis-resolve the newer "punkt_tab"
+            # resource path (raising a raw OSError instead of LookupError
+            # when a sibling "punkt" PY3 zip-safe path exists locally). Treat
+            # any lookup failure the same way: attempt a download and move
+            # on -- a sibling old/new-name entry in _REQUIRED covers the same
+            # capability if this particular package name isn't available.
             try:
                 nltk.download(package, quiet=quiet)
             except Exception:

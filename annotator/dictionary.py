@@ -21,6 +21,18 @@ from typing import Dict, List, Optional, Sequence, Union
 # first one or two short senses so the margin note stays readable.
 _POS_PREFIX_RE = re.compile(r"^[a-z]{1,5}\.\s*")
 
+# Wade-Giles/scholarly romanizations mark aspirated consonants with an
+# apostrophe (Ch'i, P'an) which PDFs frequently typeset as a curly quote
+# (\u2019 or \u2018) rather than a straight ASCII apostrophe. Normalizing both
+# forms to "'" lets curated glossary entries (written with a plain ASCII
+# apostrophe) match tokens extracted from the PDF regardless of which quote
+# character the source uses.
+_APOSTROPHE_RE = re.compile(r"[\u2018\u2019\u02bc\u00b4`]")
+
+
+def _normalize_key(word: str) -> str:
+    return _APOSTROPHE_RE.sub("'", word.strip().lower())
+
 
 class Dictionary:
     """Lazy in-memory ECDICT lookup keyed by lower-cased headword.
@@ -68,7 +80,7 @@ class Dictionary:
             with open(path, "r", encoding="utf-8-sig", newline="") as fh:
                 reader = csv.DictReader(fh)
                 for row in reader:
-                    term = (row.get("term") or "").strip().lower()
+                    term = _normalize_key(row.get("term") or "")
                     gloss = (row.get("chinese") or "").strip()
                     if term and gloss:
                         table[term] = gloss
@@ -76,7 +88,7 @@ class Dictionary:
         return table
 
     def _raw_gloss(self, word: str) -> Optional[str]:
-        key = word.strip().lower()
+        key = _normalize_key(word)
         if key in self._cache:
             return self._cache[key]
 
@@ -153,7 +165,7 @@ class Dictionary:
         otherwise skip them. The result is condensed the same way as
         :meth:`gloss` so it still fits the single-line margin label.
         """
-        raw = self._load_extra().get(word.strip().lower())
+        raw = self._load_extra().get(_normalize_key(word))
         if not raw:
             return None
         return self._condense(raw)
