@@ -113,6 +113,16 @@ class WordSelector:
                     continue
                 phrase = " ".join(w.lower() for w in words)
                 extra = self.dictionary.extra_gloss(phrase)
+                # Curated glossary hits (place names, figures, idioms) are
+                # always kept, same as single words. Plain ECDICT phrase
+                # matches must additionally contain at least one word that
+                # is itself rare enough to be worth explaining -- otherwise
+                # everyday set-phrases that merely happen to have an ECDICT
+                # entry ("and how", "there is", "cut off" ...) get annotated
+                # purely because *a* dictionary entry exists, regardless of
+                # how common every word in them is.
+                if not extra and not self._phrase_is_rare(tags[i : i + length]):
+                    continue
                 gloss = extra or self.dictionary.gloss(phrase)
                 if gloss:
                     key = phrase
@@ -160,6 +170,19 @@ class WordSelector:
 
         selections = list(chosen.values())
         return self._limit_density(selections)
+
+    def _phrase_is_rare(self, phrase_tags: List[Tuple[str, str]]) -> bool:
+        """True if a phrase contains at least one content word that is
+        itself rare enough (by the same CEFR Zipf threshold used for single
+        words) to justify annotating the phrase.
+        """
+        for surface, tag in phrase_tags:
+            if not tag.startswith(("N", "V", "J", "R")):
+                continue
+            lemma = _lemmatizer.lemmatize(surface.lower(), _wordnet_pos(tag))
+            if zipf_frequency(lemma, "en") <= self._threshold:
+                return True
+        return False
 
     def _lookup(self, surface: str, lemma: str) -> Optional[str]:
         return self.dictionary.gloss(surface) or self.dictionary.gloss(lemma)
