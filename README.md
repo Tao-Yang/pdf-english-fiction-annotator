@@ -14,7 +14,8 @@ original page content, links and bookmarks are preserved untouched.
 
 不想安装任何东西？直接用网页版：
 
-- **在线使用**：打开 https://pdf-english-fiction-annotator.onrender.com/，上传英文 PDF、选择难度，推荐B2，点击“开始注释”即可下载结果。
+- **在线使用**：打开 https://pdf-english-fiction-annotator.onrender.com/
+- 上传英文 PDF、选择难度，推荐B2，点击“开始注释”即可下载结果。
 
 - **本地运行网页版**：
 
