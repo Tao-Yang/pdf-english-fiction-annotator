@@ -361,7 +361,7 @@ gradio-app {
 }
 #app-header h1 {
   font-family: "Ma Shan Zheng", "Noto Serif SC", cursive;
-  font-size: 82px; line-height: 1.1; letter-spacing: 16px;
+  font-size: 60px; line-height: 1.15; letter-spacing: 14px;
   margin: 8px 0 2px; color: #24311d; font-weight: 400;
   text-shadow: 0 2px 0 rgba(255,255,255,0.5), 0 8px 22px rgba(40,60,30,0.28);
 }
@@ -370,8 +370,9 @@ gradio-app {
   font-size: 27px; color: #3f5233; margin: 2px 0 10px; letter-spacing: 4px;
 }
 #app-header .ah-desc {
-  max-width: 720px; margin: 6px auto 0; line-height: 2;
-  font-size: 15px; color: #46583a; font-family: "Noto Serif SC", serif;
+  max-width: 760px; margin: 8px auto 0; line-height: 1.9;
+  font-size: 22px; letter-spacing: 2px; color: #3f5233; font-weight: 400;
+  font-family: "Ma Shan Zheng", "Noto Serif SC", cursive;
 }
 
 /* ---- Dictionary picker: calligraphy tiles, multi-select ---- */
@@ -473,12 +474,9 @@ THEME = gr.themes.Soft(
 
 HEADER_HTML = """
 <div id="app-header">
-  <div class="ah-seal">英文原著</div>
-  <h1>伴 读</h1>
+  <h1>英 文 原 著 伴 读</h1>
   <p class="ah-sub">你的第一本英文原著，我陪你读完</p>
-  <p class="ah-desc">上传一本英文小说 PDF，为其中的<b>生词、短语与习语</b>
-  添上简洁的中文释义；注释安放在页面右侧扩展出的留白处，<b>不遮挡原文</b>，
-  原书目录与排版保持如初。</p>
+  <p class="ah-desc">上传一本英文原版小说的 PDF，为其中的生词、短语与习语添上简洁的中文释义。注释安放在页面右侧扩展出的留白处，不遮挡原文，原书排版与目录链接保持如初。</p>
 </div>
 """
 
