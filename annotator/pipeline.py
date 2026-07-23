@@ -431,7 +431,27 @@ def annotate_pdf_parallel(
         pages_done = 0
         try:
             with ProcessPoolExecutor(
-                max_workers=max_workers, initializer=_init_worker, initargs=(config,)
+                max_workers=max_workers,
+                initializer=_init_worker,
+                initargs=(config,),
+                # Recycle each worker process after a bounded number of
+                # chunks. Long-running worker processes accumulate leaked
+                # native (C-level) state inside PyMuPDF/MuPDF across many
+                # repeated fitz.open()/close() cycles -- font/colorspace
+                # caches and similar internals are not fully released by
+                # ``Document.close()``. On a long book with few workers
+                # (e.g. a memory/CPU-constrained host clamped to
+                # ``max_workers=1``, which then handles *every* chunk in a
+                # single process), this leak compounds over hundreds of
+                # chunks until the process becomes slow enough to look like
+                # a hang to the caller -- observed in practice as the
+                # progress bar freezing partway through a long book despite
+                # each individual chunk being cheap. Restarting the worker
+                # periodically bounds how much of that native state can
+                # accumulate in any one process. ``max_tasks_per_child``
+                # requires Python >= 3.11 (this app's Docker image pins
+                # exactly that), so no availability check is needed here.
+                max_tasks_per_child=20,
             ) as pool:
                 futures = {
                     pool.submit(

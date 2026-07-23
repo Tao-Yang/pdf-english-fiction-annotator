@@ -1,0 +1,149 @@
+=== Render webapp test log ===
+[1.7s] Navigating to https://pdf-english-fiction-annotator.onrender.com/
+[9.9s] Page loaded, title='伴读 · 英文原著中文注释'
+[10.3s] Initial screenshot saved
+[13.3s] File uploaded: D:\写作\Book\01_OceanofPDF.com_The_Gathering_-_David_Tod_Roy.pdf
+[15.9s] Clicked submit button
+[30.9s] Looks like output may be ready.
+[37.1s] CONSOLE[warning]: Method not implemented.
+[37.1s] CONSOLE[warning]: Method not implemented.
+[46.3s] PROGRESS: 始 注 释 取 回 译 注 30.5s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[46.3s] Looks like output may be ready.
+[61.7s] PROGRESS: 始 注 释 取 回 译 注 45.8s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[61.7s] Looks like output may be ready.
+[77.1s] PROGRESS: 始 注 释 取 回 译 注 61.2s 正在生成注释：第 10 / 875 页… - 40.7% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来
+[77.1s] Looks like output may be ready.
+[92.4s] PROGRESS: 始 注 释 取 回 译 注 76.6s 正在生成注释：第 30 / 875 页… - 42.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来
+[92.5s] Looks like output may be ready.
+[107.8s] PROGRESS: 始 注 释 取 回 译 注 92.0s 正在生成注释：第 40 / 875 页… - 42.7% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来
+[107.8s] Looks like output may be ready.
+[123.2s] PROGRESS:  注 释 取 回 译 注 107.3s 正在生成注释：第 50 / 875 页… - 43.3% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来
+[123.2s] Looks like output may be ready.
+[138.6s] PROGRESS:  注 释 取 回 译 注 122.7s 正在生成注释：第 70 / 875 页… - 44.6% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来
+[138.6s] Looks like output may be ready.
+[153.9s] PROGRESS:  注 释 取 回 译 注 138.1s 正在生成注释：第 80 / 875 页… - 45.3% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来
+[153.9s] Looks like output may be ready.
+[169.3s] PROGRESS:  注 释 取 回 译 注 153.4s 正在生成注释：第 90 / 875 页… - 46.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来
+[169.3s] Looks like output may be ready.
+[184.6s] PROGRESS:  注 释 取 回 译 注 168.8s 正在生成注释：第 110 / 875 页… - 47.3% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[184.6s] Looks like output may be ready.
+[200.0s] PROGRESS:  注 释 取 回 译 注 184.1s 正在生成注释：第 120 / 875 页… - 48.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[200.0s] Looks like output may be ready.
+[215.4s] PROGRESS:  注 释 取 回 译 注 199.5s 正在生成注释：第 140 / 875 页… - 49.3% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[215.4s] Looks like output may be ready.
+[230.7s] PROGRESS:  注 释 取 回 译 注 214.9s 正在生成注释：第 150 / 875 页… - 49.9% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[230.7s] Looks like output may be ready.
+[246.1s] PROGRESS:  注 释 取 回 译 注 230.2s 正在生成注释：第 160 / 875 页… - 50.6% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[246.1s] Looks like output may be ready.
+[261.5s] PROGRESS:  注 释 取 回 译 注 245.6s 正在生成注释：第 170 / 875 页… - 51.3% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[261.5s] Looks like output may be ready.
+[276.8s] PROGRESS:  注 释 取 回 译 注 260.9s 正在生成注释：第 190 / 875 页… - 52.6% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[276.8s] Looks like output may be ready.
+[292.2s] PROGRESS:  注 释 取 回 译 注 276.3s 正在生成注释：第 200 / 875 页… - 53.3% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[292.2s] Looks like output may be ready.
+[307.5s] PROGRESS:  注 释 取 回 译 注 291.7s 正在生成注释：第 220 / 875 页… - 54.6% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[307.5s] Looks like output may be ready.
+[322.9s] PROGRESS:  注 释 取 回 译 注 307.1s 正在生成注释：第 240 / 875 页… - 55.9% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[322.9s] Looks like output may be ready.
+[338.3s] PROGRESS:  注 释 取 回 译 注 322.4s 正在生成注释：第 260 / 875 页… - 57.2% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[338.3s] Looks like output may be ready.
+[353.6s] PROGRESS:  注 释 取 回 译 注 337.8s 正在生成注释：第 270 / 875 页… - 57.9% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[353.6s] Looks like output may be ready.
+[369.0s] PROGRESS:  注 释 取 回 译 注 353.1s 正在生成注释：第 290 / 875 页… - 59.2% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[369.0s] Looks like output may be ready.
+[384.3s] PROGRESS:  注 释 取 回 译 注 368.5s 正在生成注释：第 300 / 875 页… - 59.9% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[384.3s] Looks like output may be ready.
+[399.7s] PROGRESS:  注 释 取 回 译 注 383.8s 正在生成注释：第 320 / 875 页… - 61.2% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[399.7s] Looks like output may be ready.
+[415.0s] PROGRESS:  注 释 取 回 译 注 399.2s 正在生成注释：第 330 / 875 页… - 61.9% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[415.0s] Looks like output may be ready.
+[430.4s] PROGRESS:  注 释 取 回 译 注 414.6s 正在生成注释：第 350 / 875 页… - 63.2% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[430.4s] Looks like output may be ready.
+[445.8s] PROGRESS:  注 释 取 回 译 注 429.9s 正在生成注释：第 360 / 875 页… - 63.9% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[445.8s] Looks like output may be ready.
+[461.1s] PROGRESS:  注 释 取 回 译 注 445.3s 正在生成注释：第 380 / 875 页… - 65.2% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[461.1s] Looks like output may be ready.
+[476.5s] PROGRESS:  注 释 取 回 译 注 460.7s 正在生成注释：第 390 / 875 页… - 65.9% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[476.5s] Looks like output may be ready.
+[491.9s] PROGRESS:  注 释 取 回 译 注 476.0s 正在生成注释：第 410 / 875 页… - 67.2% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[491.9s] Looks like output may be ready.
+[507.2s] PROGRESS:  注 释 取 回 译 注 491.4s 正在生成注释：第 420 / 875 页… - 67.8% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[507.2s] Looks like output may be ready.
+[522.6s] PROGRESS:  注 释 取 回 译 注 506.7s 正在生成注释：第 430 / 875 页… - 68.5% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[522.6s] Looks like output may be ready.
+[537.9s] PROGRESS:  注 释 取 回 译 注 522.1s 正在生成注释：第 450 / 875 页… - 69.8% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[537.9s] Looks like output may be ready.
+[553.3s] PROGRESS:  注 释 取 回 译 注 537.4s 正在生成注释：第 470 / 875 页… - 71.2% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[553.3s] Looks like output may be ready.
+[568.7s] PROGRESS:  注 释 取 回 译 注 552.8s 正在生成注释：第 480 / 875 页… - 71.8% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[568.7s] Looks like output may be ready.
+[584.1s] PROGRESS:  注 释 取 回 译 注 568.2s 正在生成注释：第 500 / 875 页… - 73.1% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[584.1s] Looks like output may be ready.
+[599.4s] PROGRESS:  注 释 取 回 译 注 583.6s 正在生成注释：第 510 / 875 页… - 73.8% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[599.4s] Looks like output may be ready.
+[614.8s] PROGRESS:  注 释 取 回 译 注 598.9s 正在生成注释：第 530 / 875 页… - 75.1% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[614.8s] Looks like output may be ready.
+[630.1s] PROGRESS:  注 释 取 回 译 注 614.3s 正在生成注释：第 540 / 875 页… - 75.8% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[630.1s] Looks like output may be ready.
+[645.5s] PROGRESS:  注 释 取 回 译 注 629.6s 正在生成注释：第 560 / 875 页… - 77.1% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[645.5s] Looks like output may be ready.
+[660.8s] PROGRESS:  注 释 取 回 译 注 645.0s 正在生成注释：第 570 / 875 页… - 77.8% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[660.8s] Looks like output may be ready.
+[676.2s] PROGRESS:  注 释 取 回 译 注 660.3s 正在生成注释：第 590 / 875 页… - 79.1% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[676.2s] Looks like output may be ready.
+[691.5s] PROGRESS:  注 释 取 回 译 注 675.7s 正在生成注释：第 600 / 875 页… - 79.8% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[691.5s] Looks like output may be ready.
+[706.9s] PROGRESS:  注 释 取 回 译 注 691.1s 正在生成注释：第 620 / 875 页… - 81.1% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[706.9s] Looks like output may be ready.
+[722.3s] PROGRESS:  注 释 取 回 译 注 706.4s 正在生成注释：第 630 / 875 页… - 81.8% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[722.3s] Looks like output may be ready.
+[737.6s] PROGRESS:  注 释 取 回 译 注 721.8s 正在生成注释：第 650 / 875 页… - 83.1% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[737.6s] Looks like output may be ready.
+[753.1s] PROGRESS:  注 释 取 回 译 注 737.2s 正在生成注释：第 660 / 875 页… - 83.7% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[753.1s] Looks like output may be ready.
+[768.4s] PROGRESS:  注 释 取 回 译 注 752.6s 正在生成注释：第 680 / 875 页… - 85.1% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[768.4s] Looks like output may be ready.
+[783.8s] PROGRESS:  注 释 取 回 译 注 768.0s 正在生成注释：第 690 / 875 页… - 85.7% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[783.8s] Looks like output may be ready.
+[799.2s] PROGRESS:  注 释 取 回 译 注 783.3s 正在生成注释：第 700 / 875 页… - 86.4% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[799.2s] Looks like output may be ready.
+[814.5s] PROGRESS:  注 释 取 回 译 注 798.7s 正在生成注释：第 710 / 875 页… - 87.1% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[814.5s] Looks like output may be ready.
+[829.9s] PROGRESS:  注 释 取 回 译 注 814.1s 正在生成注释：第 720 / 875 页… - 87.7% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[829.9s] Looks like output may be ready.
+[845.3s] PROGRESS:  注 释 取 回 译 注 829.4s 正在生成注释：第 730 / 875 页… - 88.4% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[845.3s] Looks like output may be ready.
+[860.7s] PROGRESS:  注 释 取 回 译 注 844.8s 正在生成注释：第 750 / 875 页… - 89.7% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[860.7s] Looks like output may be ready.
+[876.0s] PROGRESS:  注 释 取 回 译 注 860.2s 正在生成注释：第 760 / 875 页… - 90.4% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[876.0s] Looks like output may be ready.
+[891.4s] PROGRESS:  注 释 取 回 译 注 875.5s 正在生成注释：第 770 / 875 页… - 91.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[891.4s] Looks like output may be ready.
+[906.7s] PROGRESS:  注 释 取 回 译 注 890.9s 正在生成注释：第 780 / 875 页… - 91.7% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[906.7s] Looks like output may be ready.
+[922.1s] PROGRESS:  注 释 取 回 译 注 906.2s 正在生成注释：第 790 / 875 页… - 92.4% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[922.1s] Looks like output may be ready.
+[937.5s] PROGRESS:  注 释 取 回 译 注 921.7s 正在生成注释：第 800 / 875 页… - 93.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[937.5s] Looks like output may be ready.
+[952.9s] PROGRESS:  注 释 取 回 译 注 937.1s 正在生成注释：第 800 / 875 页… - 93.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[952.9s] Looks like output may be ready.
+[968.3s] PROGRESS:  注 释 取 回 译 注 952.5s 正在生成注释：第 800 / 875 页… - 93.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[968.3s] Looks like output may be ready.
+[983.7s] PROGRESS:  注 释 取 回 译 注 967.8s 正在生成注释：第 800 / 875 页… - 93.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[983.7s] Looks like output may be ready.
+[999.0s] PROGRESS:  注 释 取 回 译 注 983.2s 正在生成注释：第 800 / 875 页… - 93.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[999.0s] Looks like output may be ready.
+[1014.5s] PROGRESS:  注 释 取 回 译 注 998.6s 正在生成注释：第 800 / 875 页… - 93.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[1014.5s] Looks like output may be ready.
+[1029.9s] PROGRESS: 注 释 取 回 译 注 1014.0s 正在生成注释：第 800 / 875 页… - 93.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[1029.9s] Looks like output may be ready.
+[1045.2s] PROGRESS: 注 释 取 回 译 注 1029.4s 正在生成注释：第 800 / 875 页… - 93.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[1045.2s] Looks like output may be ready.
+[1060.6s] PROGRESS: 注 释 取 回 译 注 1044.7s 正在生成注释：第 800 / 875 页… - 93.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[1060.6s] Looks like output may be ready.
+[1075.9s] PROGRESS: 注 释 取 回 译 注 1060.1s 正在生成注释：第 800 / 875 页… - 93.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[1075.9s] Looks like output may be ready.
+[1091.3s] PROGRESS: 注 释 取 回 译 注 1075.4s 正在生成注释：第 800 / 875 页… - 93.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[1091.3s] Looks like output may be ready.
+[1106.7s] PROGRESS: 注 释 取 回 译 注 1090.8s 正在生成注释：第 800 / 875 页… - 93.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典
+[1106.7s] Looks like output may be ready.
