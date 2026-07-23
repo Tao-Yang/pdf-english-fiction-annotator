@@ -95,6 +95,19 @@ class WordSelector:
                 continue
             if not _ALPHA_RE.match(surface):
                 continue
+
+            # Curated historical/cultural terms (place names, figures,
+            # idioms) are always annotated, bypassing the proper-noun and
+            # corpus-frequency filters below: they are rare/unknown to a
+            # general reader regardless of what NLTK's POS tagger or
+            # everyday-English frequency statistics say about them.
+            extra = self.dictionary.extra_gloss(surface.lower())
+            if extra:
+                key = surface.lower()
+                if key not in chosen:
+                    chosen[key] = Selected(surface, extra)
+                continue
+
             tag = tags[i][1]
             if self.config.skip_proper_nouns and tag in ("NNP", "NNPS"):
                 continue

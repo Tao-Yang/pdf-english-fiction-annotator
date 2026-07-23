@@ -37,12 +37,13 @@ DATA_DIR = os.environ.get("ANNOTATOR_DATA_DIR") or os.path.join(
     tempfile.gettempdir(), "pdf-annotator-data"
 )
 ECDICT_PATH = os.path.join(DATA_DIR, DB_FILENAME)
-# Small hand-compiled Ming/Qing official-title glossary shipped in the repo;
-# resolved relative to this file so it works regardless of the process cwd.
+# Hand-compiled historical/cultural glossary directory (official titles,
+# place names, figures, idioms) shipped in the repo; resolved relative to
+# this file so it works regardless of the process cwd.
 HISTORICAL_GLOSSARY_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "data",
-    "ming_qing_titles.csv",
+    "glossaries",
 )
 
 # --- Dictionary presets --------------------------------------------------

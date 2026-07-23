@@ -17,10 +17,11 @@ RUN pip install --no-cache-dir -r /app/webapp/requirements.txt
 COPY annotator /app/annotator
 COPY webapp /app/webapp
 
-# The Ming/Qing official-title glossary is a small hand-compiled CSV (a few
-# KB), unlike the 65 MB ECDICT csv, so it is committed to the repo and copied
-# in directly rather than downloaded/built at image-build time.
-COPY data/ming_qing_titles.csv /app/data/ming_qing_titles.csv
+# The historical/cultural glossary (official titles, place names, figures,
+# idioms) is a handful of small hand-compiled CSVs (a few KB total), unlike
+# the 65 MB ECDICT csv, so it is committed to the repo and copied in directly
+# rather than downloaded/built at image-build time.
+COPY data/glossaries /app/data/glossaries
 
 # Prebuild the disk-backed dictionary and NLTK data into the image. This avoids
 # downloading a 65 MB CSV and expanding it into a huge Python dict on Render's

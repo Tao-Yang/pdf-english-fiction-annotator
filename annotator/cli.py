@@ -45,9 +45,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--historical-glossary",
-        default="data/ming_qing_titles.csv",
-        help="Path to the Ming/Qing official-title glossary csv "
-        "(default: data/ming_qing_titles.csv). Checked before ECDICT.",
+        default="data/glossaries",
+        help="Path to the historical/cultural glossary csv or directory of "
+        "csvs covering official titles, place names, figures and idioms "
+        "(default: data/glossaries). Checked before ECDICT.",
     )
     parser.add_argument(
         "--start-page",

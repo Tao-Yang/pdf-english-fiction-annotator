@@ -9,10 +9,11 @@ requested. Only the ``word`` and ``translation`` columns are retained.
 """
 
 import csv
+import glob
 import os
 import re
 import sqlite3
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Sequence, Union
 
 
 # ECDICT translations pack several senses onto one line separated by "\n" and
@@ -24,14 +25,21 @@ _POS_PREFIX_RE = re.compile(r"^[a-z]{1,5}\.\s*")
 class Dictionary:
     """Lazy in-memory ECDICT lookup keyed by lower-cased headword.
 
-    An optional ``extra_path`` points at a small CSV of hand-compiled
-    ``term,chinese`` pairs (e.g. Ming/Qing official titles and historical
-    terminology commonly found in scholarly novel translations but absent
-    from a general-purpose dictionary like ECDICT). Entries in that file take
-    priority over ECDICT and support multi-word phrases.
+    An optional ``extra_path`` points at hand-compiled ``term,chinese`` CSVs
+    of historical/cultural glossary content (Ming/Qing official titles,
+    place names, historical figures, idioms and slang commonly found in
+    scholarly novel translations but absent from a general-purpose
+    dictionary like ECDICT). Entries in these files take priority over
+    ECDICT and support multi-word phrases. ``extra_path`` may be a single
+    CSV file, a directory (all ``*.csv`` files inside it are merged), or a
+    list/tuple of either.
     """
 
-    def __init__(self, ecdict_path: str, extra_path: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        ecdict_path: str,
+        extra_path: Optional[Union[str, Sequence[str]]] = None,
+    ) -> None:
         self._path = ecdict_path
         self._table: Optional[Dict[str, str]] = None
         self._db: Optional[sqlite3.Connection] = None
@@ -39,12 +47,25 @@ class Dictionary:
         self._extra_path = extra_path
         self._extra_table: Optional[Dict[str, str]] = None
 
+    def _extra_csv_paths(self) -> List[str]:
+        raw = self._extra_path
+        if not raw:
+            return []
+        candidates: Sequence[str] = [raw] if isinstance(raw, str) else raw
+        paths: List[str] = []
+        for candidate in candidates:
+            if os.path.isdir(candidate):
+                paths.extend(sorted(glob.glob(os.path.join(candidate, "*.csv"))))
+            elif os.path.isfile(candidate):
+                paths.append(candidate)
+        return paths
+
     def _load_extra(self) -> Dict[str, str]:
         if self._extra_table is not None:
             return self._extra_table
         table: Dict[str, str] = {}
-        if self._extra_path and os.path.isfile(self._extra_path):
-            with open(self._extra_path, "r", encoding="utf-8-sig", newline="") as fh:
+        for path in self._extra_csv_paths():
+            with open(path, "r", encoding="utf-8-sig", newline="") as fh:
                 reader = csv.DictReader(fh)
                 for row in reader:
                     term = (row.get("term") or "").strip().lower()
@@ -118,6 +139,21 @@ class Dictionary:
         with POS prefixes; this trims it to the first one or two concise senses.
         """
         raw = self._raw_gloss(word)
+        if not raw:
+            return None
+        return self._condense(raw)
+
+    def extra_gloss(self, word: str) -> Optional[str]:
+        """Look up ``word`` in the curated historical/cultural glossary only.
+
+        Unlike :meth:`gloss`, this never falls back to ECDICT. It is used to
+        force-annotate proper nouns (place names, historical figures) and
+        idioms that are deliberately curated for this project even when the
+        general word-selection heuristics (POS tag, corpus frequency) would
+        otherwise skip them. The result is condensed the same way as
+        :meth:`gloss` so it still fits the single-line margin label.
+        """
+        raw = self._load_extra().get(word.strip().lower())
         if not raw:
             return None
         return self._condense(raw)
