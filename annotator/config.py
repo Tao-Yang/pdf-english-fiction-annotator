@@ -8,7 +8,7 @@ English novel (CEFR B2, Simplified Chinese, green raster labels).
 import glob
 import os
 from dataclasses import dataclass, field
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 def _default_font_path() -> str:
@@ -64,6 +64,20 @@ CEFR_ZIPF_THRESHOLD = {
     "C2": 2.8,
 }
 
+# Per-level cap on notes-per-page. Easier levels (looser threshold, larger
+# candidate pool) get a higher cap than stricter levels so the four tiers
+# differ in *quantity* as well as content: 通俗 (A2) always shows the most
+# notes and 典雅 (C1) the fewest, matching the "由多到少" nesting
+# requirement. B2 keeps the original validated default of 12.
+CEFR_MAX_NOTES = {
+    "A1": 20,
+    "A2": 16,
+    "B1": 14,
+    "B2": 12,
+    "C1": 9,
+    "C2": 7,
+}
+
 
 @dataclass
 class AnnotationConfig:
@@ -77,7 +91,10 @@ class AnnotationConfig:
 
     # --- Selection density --------------------------------------------------
     min_notes_per_page: int = 5
-    max_notes_per_page: int = 12
+    # ``None`` (the default) derives the cap from ``CEFR_MAX_NOTES`` based on
+    # ``cefr_level`` -- see ``notes_cap()``. Set explicitly (e.g. via the
+    # ``--max-notes`` CLI flag) to override for every level.
+    max_notes_per_page: Optional[int] = None
     # Skip proper nouns (capitalised mid-sentence tokens tagged NNP/NNPS).
     skip_proper_nouns: bool = True
     # Longest phrase (in words) to look up as an idiom / collocation.
@@ -131,3 +148,21 @@ class AnnotationConfig:
                 % (self.cefr_level, ", ".join(sorted(CEFR_ZIPF_THRESHOLD)))
             )
         return CEFR_ZIPF_THRESHOLD[level]
+
+    def notes_cap(self) -> int:
+        """Return the max-notes-per-page cap for this run.
+
+        Uses the explicit ``max_notes_per_page`` override if one was set,
+        otherwise derives a level-scaled default from ``CEFR_MAX_NOTES`` so
+        easier CEFR levels always allow at least as many notes as stricter
+        ones.
+        """
+        if self.max_notes_per_page is not None:
+            return self.max_notes_per_page
+        level = self.cefr_level.upper()
+        if level not in CEFR_MAX_NOTES:
+            raise ValueError(
+                "Unknown CEFR level %r; choose from %s"
+                % (self.cefr_level, ", ".join(sorted(CEFR_MAX_NOTES)))
+            )
+        return CEFR_MAX_NOTES[level]

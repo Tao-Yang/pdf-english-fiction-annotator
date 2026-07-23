@@ -70,9 +70,15 @@ def _wordnet_pos(treebank_tag: str) -> str:
 class Selected:
     """A chosen word/phrase and its gloss."""
 
-    __slots__ = ("surface", "gloss", "priority")
+    __slots__ = ("surface", "gloss", "priority", "rarity")
 
-    def __init__(self, surface: str, gloss: str, priority: bool = False) -> None:
+    def __init__(
+        self,
+        surface: str,
+        gloss: str,
+        priority: bool = False,
+        rarity: float = 0.0,
+    ) -> None:
         self.surface = surface
         self.gloss = gloss
         # True when the gloss came from the curated historical/cultural
@@ -80,6 +86,13 @@ class Selected:
         # general-purpose ECDICT lookup. Used to keep these entries from
         # being crowded out by the per-page annotation density cap.
         self.priority = priority
+        # Zipf frequency of the word (or the rarest content word in a
+        # phrase) that qualified this pick. Lower = rarer. Used to rank
+        # non-priority picks so the per-page density cap always keeps the
+        # hardest words first -- this is what makes the four CEFR tiers a
+        # nested hierarchy (easier tier's picks always include the harder
+        # tier's picks, plus additional easier words).
+        self.rarity = rarity
 
 
 class WordSelector:
@@ -121,14 +134,20 @@ class WordSelector:
                 # entry ("and how", "there is", "cut off" ...) get annotated
                 # purely because *a* dictionary entry exists, regardless of
                 # how common every word in them is.
-                if not extra and not self._phrase_is_rare(tags[i : i + length]):
+                phrase_rarity = self._phrase_rarity(tags[i : i + length])
+                if not extra and (
+                    phrase_rarity is None or phrase_rarity > self._threshold
+                ):
                     continue
                 gloss = extra or self.dictionary.gloss(phrase)
                 if gloss:
                     key = phrase
                     if key not in chosen:
                         chosen[key] = Selected(
-                            " ".join(words), gloss, priority=bool(extra)
+                            " ".join(words),
+                            gloss,
+                            priority=bool(extra),
+                            rarity=0.0 if extra else phrase_rarity,
                         )
                     for j in range(i, i + length):
                         used[j] = True
@@ -159,43 +178,58 @@ class WordSelector:
             if not (tag.startswith(("N", "V", "J", "R"))):
                 continue
             lemma = _lemmatizer.lemmatize(surface.lower(), _wordnet_pos(tag))
-            if zipf_frequency(lemma, "en") > self._threshold:
+            zf = zipf_frequency(lemma, "en")
+            if zf > self._threshold:
                 continue
             gloss = self._lookup(surface.lower(), lemma)
             if not gloss:
                 continue
             key = lemma
             if key not in chosen:
-                chosen[key] = Selected(surface, gloss)
+                chosen[key] = Selected(surface, gloss, rarity=zf)
 
         selections = list(chosen.values())
         return self._limit_density(selections)
 
-    def _phrase_is_rare(self, phrase_tags: List[Tuple[str, str]]) -> bool:
-        """True if a phrase contains at least one content word that is
-        itself rare enough (by the same CEFR Zipf threshold used for single
-        words) to justify annotating the phrase.
+    def _phrase_rarity(self, phrase_tags: List[Tuple[str, str]]) -> Optional[float]:
+        """Return the lowest (rarest) Zipf frequency among a phrase's
+        content words, or ``None`` if it has none. This both decides whether
+        a plain-ECDICT phrase match is rare enough to annotate (the rarest
+        content word must be at or below the CEFR threshold) and ranks the
+        phrase against other picks when the per-page density cap applies.
         """
+        best: Optional[float] = None
         for surface, tag in phrase_tags:
             if not tag.startswith(("N", "V", "J", "R")):
                 continue
             lemma = _lemmatizer.lemmatize(surface.lower(), _wordnet_pos(tag))
-            if zipf_frequency(lemma, "en") <= self._threshold:
-                return True
-        return False
+            zf = zipf_frequency(lemma, "en")
+            if best is None or zf < best:
+                best = zf
+        return best
 
     def _lookup(self, surface: str, lemma: str) -> Optional[str]:
         return self.dictionary.gloss(surface) or self.dictionary.gloss(lemma)
 
     def _limit_density(self, selections: List[Selected]) -> List[Selected]:
-        cap = self.config.max_notes_per_page
+        cap = self.config.notes_cap()
         if len(selections) <= cap:
             return selections
         # Curated historical/cultural glossary hits (place names, figures,
         # idioms) take priority over ordinary vocabulary picks so a dense
         # page doesn't crowd out the terms a reader most needs context for.
         priority = [s for s in selections if s.priority]
-        rest = [s for s in selections if not s.priority]
+        # Rarest word first. Combined with the fact that a stricter CEFR
+        # tier's candidate pool is always a subset of a more lenient tier's
+        # pool (lower Zipf threshold => strict subset of words), ranking by
+        # rarity here guarantees the four dictionaries nest: the words kept
+        # for a harder tier (文学/典雅) are always exactly the rarest ones, so
+        # they are also the first ones kept for every easier tier
+        # (通俗/常用) sharing the same page and cap -- an easier tier only ever
+        # *adds* extra, more common words on top.
+        rest = sorted(
+            (s for s in selections if not s.priority), key=lambda s: s.rarity
+        )
         if len(priority) >= cap:
             return priority[:cap]
         return priority + rest[: cap - len(priority)]
