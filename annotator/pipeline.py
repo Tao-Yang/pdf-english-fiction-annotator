@@ -38,6 +38,18 @@ class _Placement:
         self.png = png
 
 
+# How many pages to accumulate in memory before flushing the in-progress
+# output document to disk and reopening it. Without this, ``out`` (a
+# fitz.Document holding every already-built page, including rasterised PNG
+# labels) grows roughly linearly with book length and can exceed a few
+# hundred MB on a full-length novel -- easily enough to OOM a
+# memory-constrained host (e.g. Render's free 512MB tier), which looks to the
+# user like the progress bar freezing partway through. Periodically saving
+# to a temp file and reopening bounds memory to a roughly constant ceiling
+# regardless of how many pages remain.
+_CHECKPOINT_EVERY_PAGES = 40
+
+
 def annotate_pdf(
     input_path: str,
     output_path: Optional[str] = None,
@@ -66,6 +78,12 @@ def annotate_pdf(
 
     src = fitz.open(input_path)
     out = fitz.open()
+    # Ping-pong temp files derived from output_path so concurrent runs (e.g.
+    # multiple webapp requests, each with their own unique output_path) never
+    # collide on the same checkpoint file.
+    ckpt_paths = [output_path + ".ckpt0.tmp", output_path + ".ckpt1.tmp"]
+    ckpt_toggle = 0
+    pages_since_checkpoint = 0
 
     stats = {
         "input": input_path,
@@ -76,34 +94,49 @@ def annotate_pdf(
         "cefr_level": config.cefr_level.upper(),
     }
 
-    for pno in range(len(src)):
-        src_page = src[pno]
-        page_doc, annotated = _build_page(
-            src_page, selector, renderer, config, pno
-        )
-        # Import the finished page into the output document.
-        out.insert_pdf(page_doc, from_page=0, to_page=0)
-        page_doc.close()
-
-        if annotated:
-            stats["pages_annotated"] += 1
-            stats["annotations"] += annotated
-        if progress and (pno % 25 == 0 or pno == len(src) - 1):
-            print(
-                "  page %d/%d  (annotated pages: %d, notes: %d)"
-                % (pno + 1, len(src), stats["pages_annotated"], stats["annotations"])
+    try:
+        for pno in range(len(src)):
+            src_page = src[pno]
+            page_doc, annotated = _build_page(
+                src_page, selector, renderer, config, pno
             )
-        if progress_cb:
-            progress_cb(pno, len(src))
+            # Import the finished page into the output document.
+            out.insert_pdf(page_doc, from_page=0, to_page=0)
+            page_doc.close()
 
-    # Preserve bookmarks / outline.
-    toc = src.get_toc(simple=False)
-    if toc:
-        out.set_toc(toc)
+            if annotated:
+                stats["pages_annotated"] += 1
+                stats["annotations"] += annotated
+            if progress and (pno % 25 == 0 or pno == len(src) - 1):
+                print(
+                    "  page %d/%d  (annotated pages: %d, notes: %d)"
+                    % (pno + 1, len(src), stats["pages_annotated"], stats["annotations"])
+                )
+            if progress_cb:
+                progress_cb(pno, len(src))
 
-    out.save(output_path, garbage=4, deflate=True)
-    out.close()
-    src.close()
+            pages_since_checkpoint += 1
+            is_last_page = pno == len(src) - 1
+            if pages_since_checkpoint >= _CHECKPOINT_EVERY_PAGES and not is_last_page:
+                ckpt_path = ckpt_paths[ckpt_toggle]
+                out.save(ckpt_path, garbage=4, deflate=True)
+                out.close()
+                out = fitz.open(ckpt_path)
+                ckpt_toggle = 1 - ckpt_toggle
+                pages_since_checkpoint = 0
+
+        # Preserve bookmarks / outline.
+        toc = src.get_toc(simple=False)
+        if toc:
+            out.set_toc(toc)
+
+        out.save(output_path, garbage=4, deflate=True)
+        out.close()
+    finally:
+        src.close()
+        for ckpt_path in ckpt_paths:
+            if os.path.exists(ckpt_path):
+                os.remove(ckpt_path)
 
     if report_path:
         with open(report_path, "w", encoding="utf-8") as fh:
