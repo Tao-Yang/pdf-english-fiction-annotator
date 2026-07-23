@@ -19,7 +19,7 @@ The output PDF has the same page count and navigation as the source.
 
 import json
 import os
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import fitz  # PyMuPDF
 
@@ -44,8 +44,14 @@ def annotate_pdf(
     config: Optional[AnnotationConfig] = None,
     report_path: Optional[str] = None,
     progress: bool = True,
+    progress_cb: Optional[Callable[[int, int], None]] = None,
 ) -> str:
     """Annotate ``input_path`` and write the result to ``output_path``.
+
+    ``progress_cb``, if given, is called after every page as
+    ``progress_cb(pno, total_pages)`` (0-based page index) so a long-running
+    caller (e.g. the Gradio webapp) can surface real per-page progress
+    instead of appearing to hang on a single big book.
 
     Returns the output path actually written.
     """
@@ -87,6 +93,8 @@ def annotate_pdf(
                 "  page %d/%d  (annotated pages: %d, notes: %d)"
                 % (pno + 1, len(src), stats["pages_annotated"], stats["annotations"])
             )
+        if progress_cb:
+            progress_cb(pno, len(src))
 
     # Preserve bookmarks / outline.
     toc = src.get_toc(simple=False)

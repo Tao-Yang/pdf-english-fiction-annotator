@@ -621,12 +621,21 @@ def annotate(pdf_file, dictionary, start_page, progress=gr.Progress()):
         config.start_page = 0
 
     progress(0.4, desc="正在读取词汇并生成注释…")
+
+    def _on_page(pno: int, total: int) -> None:
+        # Map per-page progress into the 40%-98% range; the final 2% covers
+        # saving the PDF. Large books (hundreds of pages) take a while, so
+        # this keeps the bar moving instead of appearing stuck at 40%.
+        frac = 0.4 + 0.58 * (pno + 1) / max(total, 1)
+        progress(frac, desc="正在生成注释：第 %d / %d 页…" % (pno + 1, total))
+
     try:
         written = annotate_pdf(
             input_path=src_path,
             output_path=out_path,
             config=config,
             progress=False,
+            progress_cb=_on_page,
         )
     except Exception as exc:
         raise gr.Error("注释失败：%s" % exc) from exc
