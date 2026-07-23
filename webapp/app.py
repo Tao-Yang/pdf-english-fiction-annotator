@@ -45,18 +45,22 @@ HISTORICAL_GLOSSARY_PATH = os.path.join(
 )
 
 # --- Dictionary presets --------------------------------------------------
-# The UI now asks the reader to "choose a dictionary" rather than a raw CEFR
-# level. Each named dictionary maps to an internal CEFR threshold that controls
-# how many / how rare the annotated words are. The built-in Ming/Qing novel
-# glossary is always consulted first regardless of the choice.
-DICTIONARY_TO_LEVEL = {
-    "通俗词典 · 注释最多（入门）": "A2",
-    "常用词典 · 注释较多": "B1",
-    "文学词典 · 注释适中（推荐）": "B2",
-    "典雅词典 · 仅注释生僻词（进阶）": "C1",
-}
-DICTIONARY_CHOICES = list(DICTIONARY_TO_LEVEL)
-DEFAULT_DICTIONARY = "文学词典 · 注释适中（推荐）"
+# The reader picks one or more "dictionaries" (rendered as calligraphy tiles,
+# multi-select). Each tile corresponds to a vocabulary tier / CEFR threshold.
+# When several are selected the annotations cover every selected tier, i.e. the
+# most inclusive (easiest) tier wins. The built-in Ming/Qing novel glossary is
+# always applied on top regardless of the choice.
+DICTIONARY_TILES = [
+    ("通俗词典", "注释最多 · 入门", "A2"),
+    ("常用词典", "注释较多", "B1"),
+    ("文学词典", "注释适中 · 推荐", "B2"),
+    ("典雅词典", "仅注释生僻词 · 进阶", "C1"),
+]
+DICTIONARY_CHOICES = [name for name, _desc, _lv in DICTIONARY_TILES]
+NAME_TO_LEVEL = {name: lv for name, _desc, lv in DICTIONARY_TILES}
+DEFAULT_DICTIONARIES = ["文学词典"]
+# Lower rank == more words annotated (easier / more inclusive tier).
+_LEVEL_RANK = {"A2": 0, "B1": 1, "B2": 2, "C1": 3}
 
 
 # --- Literary background artwork -----------------------------------------
@@ -189,51 +193,142 @@ def _lerp_hex(c1, c2, t):
         int(round(a[j] + (b[j] - a[j]) * t)) for j in range(3))
 
 
+def _house(cx, ground, w, h, wall, roof, op=0.85):
+    """A Jiangnan waterside house: white-washed wall + dark tiled roof."""
+    parts = ["<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' fill='%s' "
+             "opacity='%.2f'/>" % (cx - w / 2, ground - h, w, h, wall, op)]
+    roof_h = h * 0.30
+    parts.append("<g opacity='%.2f'>%s</g>"
+                 % (op, _roof(cx, ground - h - roof_h, w * 1.12, roof_h, roof,
+                              1.0, body=False)))
+    win = min(1.0, op * 0.75)
+    parts.append("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' fill='#565a4c' "
+                 "opacity='%.2f'/>" % (cx - w * 0.28, ground - h * 0.60, w * 0.20,
+                                       h * 0.24, win))
+    parts.append("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' fill='#565a4c' "
+                 "opacity='%.2f'/>" % (cx + w * 0.08, ground - h * 0.60, w * 0.20,
+                                       h * 0.24, win))
+    return "".join(parts)
+
+
+def _bridge(cx, crown_y, span, color):
+    """An arched Jiangnan stone bridge over the canal."""
+    left = cx - span / 2.0
+    right = cx + span / 2.0
+    base = crown_y + span * 0.30
+    th = span * 0.06 + 12
+    top = "M%.1f,%.1f Q%.1f,%.1f %.1f,%.1f" % (left, base, cx, crown_y, right, base)
+    bot = " L%.1f,%.1f Q%.1f,%.1f %.1f,%.1f Z" % (
+        right, base + th, cx, crown_y + th, left, base + th)
+    parts = ["<path d='%s%s' fill='%s' opacity='0.92'/>" % (top, bot, color)]
+    ar = span * 0.16
+    parts.append("<path d='M%.1f,%.1f A%.1f,%.1f 0 0 1 %.1f,%.1f' fill='none' "
+                 "stroke='%s' stroke-width='4' opacity='0.55'/>"
+                 % (cx - ar, base + th + 4, ar, ar, cx + ar, base + th + 4, color))
+    posts = ["<g stroke='%s' stroke-width='3' opacity='0.85'>" % color]
+    for k in range(-2, 3):
+        px = cx + k * span * 0.16
+        tt = (px - left) / (right - left)
+        yy = (1 - tt) ** 2 * base + 2 * (1 - tt) * tt * crown_y + tt * tt * base
+        posts.append("<line x1='%.1f' y1='%.1f' x2='%.1f' y2='%.1f'/>"
+                     % (px, yy, px, yy - 16))
+    posts.append("</g>")
+    parts.append("".join(posts))
+    return "".join(parts)
+
+
+def _willow(ax, ay, direction, scale, color):
+    """A fuller cluster of drooping willow branches framing a top corner."""
+    branch = ["<g stroke='%s' stroke-width='%.1f' fill='none' opacity='0.48'>"
+              % (color, 2.0 * scale)]
+    leaf = ["<g fill='%s' opacity='0.5'>" % color]
+    for j in range(11):
+        anx = ax + direction * j * 24 * scale
+        any_ = ay + j * 5
+        length = (150 + (j % 5) * 42 + (j * 13) % 70) * scale
+        sway = direction * (28 + (j * 19) % 78) * scale
+        ex = anx + sway
+        ey = any_ + length
+        cx1 = anx + direction * 10 * scale
+        cy1 = any_ + length * 0.55
+        branch.append("<path d='M%.1f,%.1f Q%.1f,%.1f %.1f,%.1f'/>"
+                      % (anx, any_, cx1, cy1, ex, ey))
+        for tt in (0.48, 0.66, 0.80, 0.92):
+            mt = 1 - tt
+            bx = mt * mt * anx + 2 * mt * tt * cx1 + tt * tt * ex
+            by = mt * mt * any_ + 2 * mt * tt * cy1 + tt * tt * ey
+            leaf.append("<ellipse cx='%.1f' cy='%.1f' rx='%.1f' ry='%.1f' "
+                        "transform='rotate(%.0f %.1f %.1f)'/>"
+                        % (bx, by, 3.0 * scale, 8.0 * scale, direction * 40, bx, by))
+    branch.append("</g>")
+    leaf.append("</g>")
+    return "".join(branch) + "".join(leaf)
+
+
 def _background_data_uri():
-    rng = random.Random(20240723)
+    rng = random.Random(20240811)
     width, height = 1600, 1000
     p = ["<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 %d %d' "
          "preserveAspectRatio='xMidYMid slice'>" % (width, height)]
-    # Warm dusk sky built from solid colour bands (renders in every engine,
-    # unlike SVG gradients which some renderers ignore).
+    # Misty green rainy sky built from solid colour bands (renders everywhere).
     bands = 48
     for i in range(bands):
         t = i / float(bands - 1)
-        col = _lerp_hex("#f2e9d5", "#dcc9a3", t)
+        col = _lerp_hex("#e3e7d1", "#a9b487", t)
         y0 = height * i / float(bands)
         p.append("<rect x='0' y='%.1f' width='%d' height='%.1f' fill='%s'/>"
                  % (y0, width, height / float(bands) + 1.0, col))
-    p.append("<circle cx='1200' cy='250' r='130' fill='#faf3dc' opacity='0.6'/>")
-    p.append("<circle cx='1200' cy='250' r='92' fill='#fdf8e8' opacity='0.75'/>")
-    p.append("<path d='M0,470 C220,405 380,455 560,432 C760,404 900,455 1120,422 "
-             "C1320,392 1470,442 1600,418 L1600,1000 L0,1000 Z' "
-             "fill='#c8b78f' opacity='0.5'/>")
-    p.append(_pagoda(1360, 470, 0.85, "#b09a72"))
-    p.append(_roof(240, 520, 360, 66, "#7b6950", 0.72))
-    p.append(_roof(560, 560, 300, 58, "#6c5b43", 0.80))
-    p.append(_roof(150, 610, 280, 54, "#5d4d39", 0.86))
-    p.append(_roof(430, 640, 250, 50, "#574837", 0.90))
-    p.append(_roof(900, 590, 320, 62, "#5a4a38", 0.85))
-    p.append(_roof(1120, 630, 260, 52, "#4f4030", 0.90))
-    # Soft mist drifting over the rooftops.
-    p.append("<rect x='0' y='430' width='%d' height='210' fill='#f6f0e2' "
-             "opacity='0.32'/>" % width)
-    p.append("<rect x='0' y='560' width='%d' height='240' fill='#f4ecda' "
-             "opacity='0.34'/>" % width)
+    # Pale veiled sun behind the rain.
+    p.append("<circle cx='1180' cy='250' r='150' fill='#eef1de' opacity='0.5'/>")
+    p.append("<circle cx='1180' cy='250' r='96' fill='#f6f8e8' opacity='0.6'/>")
+    # Distant green treeline.
+    p.append("<path d='M0,500 C240,440 420,492 620,468 C820,444 980,494 1200,462 "
+             "C1360,438 1500,486 1600,462 L1600,1000 L0,1000 Z' "
+             "fill='#8f9e6e' opacity='0.40'/>")
+    # Far pagoda + misty far houses.
+    p.append(_pagoda(1410, 470, 0.70, "#5c6350"))
+    for hx, hg, hw, hh in [(120, 590, 120, 90), (250, 585, 150, 108),
+                           (400, 596, 118, 84), (1180, 600, 150, 106),
+                           (1320, 590, 128, 94)]:
+        p.append(_house(hx, hg, hw, hh, "#e7e6d5", "#474b41", 0.68))
+    # Mist over the midground.
+    p.append("<rect x='0' y='470' width='%d' height='180' fill='#e9edd9' "
+             "opacity='0.42'/>" % width)
+    # Canal water.
+    p.append("<rect x='0' y='740' width='%d' height='120' fill='#96a978' "
+             "opacity='0.5'/>" % width)
+    p.append("<rect x='0' y='740' width='%d' height='120' fill='#bccaa0' "
+             "opacity='0.22'/>" % width)
+    # Nearer waterside houses (left cluster).
+    p.append(_house(210, 760, 152, 150, "#eceadb", "#40453b", 0.86))
+    p.append(_house(360, 770, 128, 128, "#e6e5d4", "#3c413a", 0.86))
+    p.append(_house(72, 774, 128, 140, "#e2e1d0", "#3a3f36", 0.86))
+    # Arched stone bridge over the canal + two ladies with umbrellas on it.
+    p.append(_bridge(720, 662, 300, "#9aa17f"))
+    p.append(_umbrella_figure(690, 726, 60, "#a23a37", "#3c4a67"))
+    p.append(_umbrella_figure(772, 736, 54, "#33445f", "#7d466a"))
+    # Willow foliage framing the two top corners (echoing the app icon).
+    p.append("<ellipse cx='80' cy='40' rx='170' ry='110' fill='#5f6f3f' "
+             "opacity='0.5'/>")
+    p.append("<ellipse cx='1530' cy='44' rx='180' ry='115' fill='#586838' "
+             "opacity='0.5'/>")
+    p.append(_willow(150, 60, 1, 1.0, "#5f6f3f"))
+    p.append(_willow(1470, 64, -1, 1.05, "#556435"))
+    # Rain.
     rain = []
-    for _ in range(140):
+    for _ in range(150):
         rx = rng.uniform(0, width)
-        ry = rng.uniform(0, 800)
+        ry = rng.uniform(0, 820)
         rl = rng.uniform(12, 26)
         rain.append("<line x1='%.0f' y1='%.0f' x2='%.0f' y2='%.0f'/>"
                     % (rx, ry, rx - 7, ry + rl))
-    p.append("<g stroke='#b9ab8b' stroke-width='1' opacity='0.38'>%s</g>"
+    p.append("<g stroke='#aeb98f' stroke-width='1' opacity='0.40'>%s</g>"
              % "".join(rain))
-    p.append("<ellipse cx='730' cy='845' rx='560' ry='58' fill='#cbbc99' "
-             "opacity='0.5'/>")
-    p.append(_umbrella_figure(645, 815, 80, "#9c3b39", "#3b4a67"))
-    p.append(_umbrella_figure(805, 830, 72, "#33445f", "#82486a"))
+    # Foreground shelf of English classics.
     p.append(_bookshelf(rng, width, height))
+    # Cohesive rainy-green tint over everything.
+    p.append("<rect x='0' y='0' width='%d' height='%d' fill='#54663f' "
+             "opacity='0.07'/>" % (width, height))
     p.append("</svg>")
     return "data:image/svg+xml;utf8," + urllib.parse.quote("".join(p))
 
@@ -243,52 +338,120 @@ _BACKGROUND_DATA_URI = _background_data_uri()
 _CSS_TEMPLATE = """
 gradio-app {
   background:
-    linear-gradient(rgba(244,238,222,0.34), rgba(226,214,187,0.52)),
+    linear-gradient(rgba(150,166,120,0.16), rgba(74,92,58,0.30)),
     url("__BG__") center bottom / cover no-repeat fixed !important;
 }
 .gradio-container {
   background: transparent !important;
-  max-width: 1060px !important;
+  width: 68vw !important;
+  max-width: 1500px !important;
+  min-width: 720px !important;
   margin: 0 auto !important;
+  padding-bottom: 20px !important;
 }
-#app-header { text-align: center; padding: 30px 20px 6px; color: #3a2f26; }
-#app-header .ah-kicker {
-  display: inline-block; letter-spacing: 0.35em; font-size: 12px;
-  color: #2e6b45; border: 1px solid rgba(46,107,69,0.45);
-  border-radius: 999px; padding: 4px 16px; margin-bottom: 14px;
-  background: rgba(253,250,243,0.7);
+
+/* ---- Header (brush calligraphy) ---- */
+#app-header { text-align: center; padding: 34px 20px 2px; color: #33402c; }
+#app-header .ah-seal {
+  display: inline-block; background: #a5352f; color: #fbe7cf;
+  font-family: "Ma Shan Zheng", "Noto Serif SC", serif;
+  font-size: 22px; letter-spacing: 5px; padding: 7px 15px 4px;
+  border-radius: 9px; transform: rotate(-3deg);
+  box-shadow: 0 4px 12px rgba(120,30,25,0.35); margin-bottom: 4px;
 }
 #app-header h1 {
-  font-family: "Noto Serif SC", Georgia, "Songti SC", serif;
-  font-weight: 700; font-size: 34px; margin: 6px 0; color: #33281f;
-  text-shadow: 0 1px 0 rgba(255,255,255,0.55);
+  font-family: "Ma Shan Zheng", "Noto Serif SC", cursive;
+  font-size: 82px; line-height: 1.1; letter-spacing: 16px;
+  margin: 8px 0 2px; color: #24311d; font-weight: 400;
+  text-shadow: 0 2px 0 rgba(255,255,255,0.5), 0 8px 22px rgba(40,60,30,0.28);
 }
 #app-header .ah-sub {
-  max-width: 690px; margin: 12px auto 4px; line-height: 1.95;
-  font-size: 15px; color: #5a4a3a;
+  font-family: "Ma Shan Zheng", "Noto Serif SC", serif;
+  font-size: 27px; color: #3f5233; margin: 2px 0 10px; letter-spacing: 4px;
 }
-#app-header .ah-note { font-size: 12.5px; color: #8a7a63; margin-top: 8px; }
+#app-header .ah-desc {
+  max-width: 720px; margin: 6px auto 0; line-height: 2;
+  font-size: 15px; color: #46583a; font-family: "Noto Serif SC", serif;
+}
+
+/* ---- Dictionary picker: calligraphy tiles, multi-select ---- */
+#pick-title {
+  text-align: center; margin: 20px 0 10px;
+  font-family: "Ma Shan Zheng", "Noto Serif SC", serif;
+  font-size: 30px; letter-spacing: 8px; color: #2e6b45;
+}
+#dict-picker { margin: 0 auto 4px; border: none !important; background: transparent !important; }
+#dict-picker [data-testid="checkbox-group"],
+#dict-picker fieldset, #dict-picker .wrap {
+  display: flex !important; flex-wrap: wrap !important;
+  gap: 18px !important; justify-content: center !important;
+  border: none !important; background: transparent !important;
+}
+#dict-picker label {
+  flex: 1 1 180px; min-width: 168px; max-width: 260px;
+  display: flex !important; align-items: center; justify-content: center;
+  padding: 22px 12px; border-radius: 18px;
+  border: 2px solid rgba(70,90,55,0.30);
+  background: rgba(250,250,242,0.86) !important;
+  cursor: pointer; transition: all .16s ease;
+  font-family: "Ma Shan Zheng", "Noto Serif SC", cursive;
+  font-size: 33px; color: #37472d; letter-spacing: 4px;
+  box-shadow: 0 6px 16px rgba(50,60,40,0.12);
+}
+#dict-picker label:hover { border-color: #3f7a4e; transform: translateY(-3px); }
+#dict-picker input[type="checkbox"] {
+  position: absolute !important; opacity: 0 !important; width: 0 !important;
+  height: 0 !important; margin: 0 !important;
+}
+#dict-picker label:has(input:checked) {
+  background: #3f7a4e !important; color: #fdfbf0 !important;
+  border-color: #2e6b45; box-shadow: 0 10px 24px rgba(46,107,69,0.38);
+}
+#dict-legend {
+  text-align: center; color: #46583a; font-size: 13px; line-height: 2;
+  margin: 4px auto 16px; max-width: 780px; font-family: "Noto Serif SC", serif;
+}
+#dict-legend b { color: #2e6b45; font-weight: 600; }
+#dict-legend span { margin: 0 9px; white-space: nowrap; }
+
+/* ---- Operation cards (fill 2/3 of the screen) ---- */
 .paper-card {
-  background: rgba(253,250,243,0.90) !important;
-  border: 1px solid rgba(120,95,60,0.22) !important;
-  border-radius: 14px !important;
-  box-shadow: 0 10px 34px rgba(60,45,30,0.20) !important;
-  padding: 20px !important;
+  background: rgba(252,251,244,0.92) !important;
+  border: 1px solid rgba(70,90,55,0.22) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 14px 40px rgba(40,55,30,0.22) !important;
+  padding: 26px !important; min-height: 440px;
   backdrop-filter: blur(2px);
 }
-.paper-card label span, .paper-card .gr-check-radio { color: #3a2f26 !important; }
-.paper-card input, .paper-card textarea, .paper-card .wrap-inner,
-.paper-card .secondary-wrap, .paper-card .container .wrap {
-  background: rgba(255,253,248,0.96) !important;
+.card-title {
+  font-family: "Ma Shan Zheng", "Noto Serif SC", serif;
+  font-size: 27px; color: #2e6b45; letter-spacing: 4px;
+  margin-bottom: 14px; text-align: center;
+  border-bottom: 1px dashed rgba(70,90,55,0.3); padding-bottom: 8px;
 }
-button.primary, .primary {
-  background: #2e8b57 !important; border: none !important; color: #fff !important;
-  font-weight: 600 !important; letter-spacing: 0.06em;
+.paper-card label span { color: #3a4a30 !important; }
+.paper-card input, .paper-card textarea {
+  background: rgba(255,254,248,0.96) !important;
 }
-button.primary:hover, .primary:hover { background: #276f47 !important; }
+#pdf-in .wrap, #pdf-in .file-preview, #pdf-out .wrap, #pdf-out .file-preview {
+  min-height: 250px !important;
+}
+
+/* ---- Run button (brush style) ---- */
+#run-btn button, button.primary, .primary {
+  background: #3f7a4e !important; border: none !important; color: #fdfbf0 !important;
+  font-family: "Ma Shan Zheng", "Noto Serif SC", serif !important;
+  font-size: 23px !important; letter-spacing: 8px; padding: 14px 10px !important;
+  border-radius: 12px !important; font-weight: 400 !important;
+}
+#run-btn button:hover, button.primary:hover, .primary:hover {
+  background: #316040 !important;
+}
+
+/* ---- Footer ---- */
 #app-footer {
-  text-align: center; padding: 16px 12px 26px; color: #6a5a45; font-size: 13px;
-  line-height: 1.9;
+  text-align: center; padding: 18px 12px 30px; color: #46583a;
+  font-size: 13px; line-height: 1.95; font-family: "Noto Serif SC", serif;
 }
 #app-footer a {
   color: #2e6b45; text-decoration: none;
@@ -303,19 +466,26 @@ THEME = gr.themes.Soft(
     primary_hue=gr.themes.colors.green,
     secondary_hue=gr.themes.colors.emerald,
     neutral_hue=gr.themes.colors.stone,
-    font=[gr.themes.GoogleFont("Noto Serif SC"), "Georgia", "serif"],
+    font=[gr.themes.GoogleFont("Noto Serif SC"),
+          gr.themes.GoogleFont("Ma Shan Zheng"),
+          "Georgia", "serif"],
 )
 
 HEADER_HTML = """
 <div id="app-header">
-  <div class="ah-kicker">江 南 夜 雨 · 书 斋</div>
-  <h1>📖 英文小说 · 中文注释书斋</h1>
-  <p class="ah-sub">上传一本英文原版小说的 PDF，为其中的<b>生词、短语与习语</b>
-  添上简洁的中文释义。注释安放在页面右侧扩展出的留白处，<b>不遮挡原文</b>，
-  原书排版与目录链接保持如初。</p>
-  <div class="ah-note">词典已在服务端预先建立索引 · 免费服务器首次唤醒可能需要片刻</div>
+  <div class="ah-seal">英文原著</div>
+  <h1>伴 读</h1>
+  <p class="ah-sub">你的第一本英文原著，我陪你读完</p>
+  <p class="ah-desc">上传一本英文小说 PDF，为其中的<b>生词、短语与习语</b>
+  添上简洁的中文释义；注释安放在页面右侧扩展出的留白处，<b>不遮挡原文</b>，
+  原书目录与排版保持如初。</p>
 </div>
 """
+
+LEGEND_HTML = "<div id='dict-legend'>" + "".join(
+    "<span><b>%s</b> · %s</span>" % (name, desc)
+    for name, desc, _lv in DICTIONARY_TILES
+) + "<br/>可多选，注释将覆盖所选各档词汇；内置<b>明清小说词典</b>始终生效。</div>"
 
 FOOTER_HTML = """
 <div id="app-footer">
@@ -351,11 +521,16 @@ def _ensure_assets(progress=None) -> None:
         _READY = True
 
 
-def annotate(pdf_file, dictionary, start_page, progress=gr.Progress()):
+def annotate(pdf_file, dictionaries, start_page, progress=gr.Progress()):
     if pdf_file is None:
         raise gr.Error("请先上传一个英文 PDF 文件。")
 
-    level = DICTIONARY_TO_LEVEL.get(dictionary, "B2")
+    names = [d for d in (dictionaries or []) if d in NAME_TO_LEVEL]
+    if not names:
+        names = DEFAULT_DICTIONARIES
+    # The most inclusive (easiest) selected tier wins, so every chosen
+    # dictionary's vocabulary is covered.
+    level = min((NAME_TO_LEVEL[n] for n in names), key=lambda lv: _LEVEL_RANK[lv])
     _ensure_assets(progress)
 
     src_path = pdf_file if isinstance(pdf_file, str) else pdf_file.name
@@ -393,16 +568,23 @@ def annotate(pdf_file, dictionary, start_page, progress=gr.Progress()):
     return written
 
 
-with gr.Blocks(title="英文小说中文注释书斋", theme=THEME, css=CUSTOM_CSS) as demo:
+with gr.Blocks(title="伴读 · 英文原著中文注释", theme=THEME, css=CUSTOM_CSS) as demo:
     gr.HTML(HEADER_HTML)
-    with gr.Row():
+    gr.HTML("<div id='pick-title'>选 择 字 典 · 可 多 选</div>")
+    dictionaries = gr.CheckboxGroup(
+        choices=DICTIONARY_CHOICES,
+        value=DEFAULT_DICTIONARIES,
+        show_label=False,
+        container=False,
+        elem_id="dict-picker",
+    )
+    gr.HTML(LEGEND_HTML)
+    with gr.Row(equal_height=True):
         with gr.Column(scale=1, elem_classes=["paper-card"]):
-            pdf_in = gr.File(label="英文 PDF", file_types=[".pdf"], type="filepath")
-            dictionary = gr.Dropdown(
-                choices=DICTIONARY_CHOICES,
-                value=DEFAULT_DICTIONARY,
-                label="选择字典",
-                info="字典越“典雅”，注释的词越少越精；内置明清小说词典始终优先生效",
+            gr.HTML("<div class='card-title'>上 传 原 著</div>")
+            pdf_in = gr.File(
+                label="英文 PDF", file_types=[".pdf"], type="filepath",
+                elem_id="pdf-in",
             )
             start_page = gr.Number(
                 label="正文起始页（可选）",
@@ -410,11 +592,12 @@ with gr.Blocks(title="英文小说中文注释书斋", theme=THEME, css=CUSTOM_C
                 value=None,
                 precision=0,
             )
-            run = gr.Button("开始注释", variant="primary")
+            run = gr.Button("开 始 注 释", variant="primary", elem_id="run-btn")
         with gr.Column(scale=1, elem_classes=["paper-card"]):
-            pdf_out = gr.File(label="下载带注释的 PDF")
+            gr.HTML("<div class='card-title'>取 回 译 注</div>")
+            pdf_out = gr.File(label="下载带注释的 PDF", elem_id="pdf-out")
 
-    run.click(annotate, inputs=[pdf_in, dictionary, start_page], outputs=pdf_out)
+    run.click(annotate, inputs=[pdf_in, dictionaries, start_page], outputs=pdf_out)
 
     gr.HTML(FOOTER_HTML)
 
