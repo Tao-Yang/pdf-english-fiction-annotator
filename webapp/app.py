@@ -14,6 +14,7 @@ on first use, caching them under a writable data directory.
 """
 
 import os
+import base64
 import random
 import sys
 import tempfile
@@ -64,10 +65,15 @@ _LEVEL_RANK = {"A2": 0, "B1": 1, "B2": 2, "C1": 3}
 
 
 # --- Literary background artwork -----------------------------------------
-# A hand-built SVG evoking a rainy Jiangnan (Jinling) evening: misty ancient
-# rooftops and a pagoda, two ladies in qipao under oil-paper umbrellas, and a
-# foreground shelf of English book spines. Rendered once at import time and
+# A soft, blurred wash derived from the app icon (a misty Jiangnan water town
+# with a moon-gate arch, a stone bridge and a stack of English classics),
 # embedded as a data-URI so no external image hosting is required.
+_BG_ASSET = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "assets", "background.jpg")
+with open(_BG_ASSET, "rb") as _bg_f:
+    _BACKGROUND_DATA_URI = (
+        "data:image/jpeg;base64,"
+        + base64.b64encode(_bg_f.read()).decode("ascii"))
 
 
 def _roof(cx, ridge_y, width, height, color, opacity=0.9, body=True):
@@ -270,76 +276,81 @@ def _background_data_uri():
     width, height = 1600, 1000
     p = ["<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 %d %d' "
          "preserveAspectRatio='xMidYMid slice'>" % (width, height)]
-    # Misty green rainy sky built from solid colour bands (renders everywhere).
+    # Soft misty sepia-green sky built from solid colour bands (renders
+    # everywhere), warmed to echo the app icon's nostalgic tone.
     bands = 48
     for i in range(bands):
         t = i / float(bands - 1)
-        col = _lerp_hex("#e3e7d1", "#a9b487", t)
+        col = _lerp_hex("#e9e4ce", "#b3b48a", t)
         y0 = height * i / float(bands)
         p.append("<rect x='0' y='%.1f' width='%d' height='%.1f' fill='%s'/>"
                  % (y0, width, height / float(bands) + 1.0, col))
-    # Pale veiled sun behind the rain.
-    p.append("<circle cx='1180' cy='250' r='150' fill='#eef1de' opacity='0.5'/>")
-    p.append("<circle cx='1180' cy='250' r='96' fill='#f6f8e8' opacity='0.6'/>")
-    # Distant green treeline.
+    # Pale veiled sun softening the sky.
+    p.append("<circle cx='1180' cy='250' r='160' fill='#f2ecd6' opacity='0.5'/>")
+    p.append("<circle cx='1180' cy='250' r='100' fill='#f8f3df' opacity='0.55'/>")
+    # Distant treeline.
     p.append("<path d='M0,500 C240,440 420,492 620,468 C820,444 980,494 1200,462 "
              "C1360,438 1500,486 1600,462 L1600,1000 L0,1000 Z' "
-             "fill='#8f9e6e' opacity='0.40'/>")
-    # Far pagoda + misty far houses.
-    p.append(_pagoda(1410, 470, 0.70, "#5c6350"))
+             "fill='#93976b' opacity='0.38'/>")
+    # Far pagoda + misty far houses of the water town.
+    p.append(_pagoda(1410, 470, 0.70, "#63614c"))
     for hx, hg, hw, hh in [(120, 590, 120, 90), (250, 585, 150, 108),
                            (400, 596, 118, 84), (1180, 600, 150, 106),
                            (1320, 590, 128, 94)]:
-        p.append(_house(hx, hg, hw, hh, "#e7e6d5", "#474b41", 0.68))
-    # Mist over the midground.
-    p.append("<rect x='0' y='470' width='%d' height='180' fill='#e9edd9' "
-             "opacity='0.42'/>" % width)
-    # Canal water.
-    p.append("<rect x='0' y='740' width='%d' height='120' fill='#96a978' "
-             "opacity='0.5'/>" % width)
-    p.append("<rect x='0' y='740' width='%d' height='120' fill='#bccaa0' "
+        p.append(_house(hx, hg, hw, hh, "#ebe7d3", "#4c4a3d", 0.66))
+    # Heavy veils of mist over the midground for a painterly look.
+    p.append("<rect x='0' y='452' width='%d' height='210' fill='#ece7d2' "
+             "opacity='0.50'/>" % width)
+    p.append("<rect x='0' y='500' width='%d' height='150' fill='#f0ecd8' "
+             "opacity='0.34'/>" % width)
+    # Calm canal water.
+    p.append("<rect x='0' y='740' width='%d' height='120' fill='#9aa47a' "
+             "opacity='0.48'/>" % width)
+    p.append("<rect x='0' y='740' width='%d' height='120' fill='#c4c6a2' "
              "opacity='0.22'/>" % width)
-    # Nearer waterside houses (left cluster).
-    p.append(_house(210, 760, 152, 150, "#eceadb", "#40453b", 0.86))
-    p.append(_house(360, 770, 128, 128, "#e6e5d4", "#3c413a", 0.86))
-    p.append(_house(72, 774, 128, 140, "#e2e1d0", "#3a3f36", 0.86))
-    # Arched stone bridge over the canal + two ladies with umbrellas on it.
-    p.append(_bridge(720, 662, 300, "#9aa17f"))
-    p.append(_umbrella_figure(690, 726, 60, "#a23a37", "#3c4a67"))
-    p.append(_umbrella_figure(772, 736, 54, "#33445f", "#7d466a"))
-    # Willow foliage framing the two top corners (echoing the app icon).
-    p.append("<ellipse cx='80' cy='40' rx='170' ry='110' fill='#5f6f3f' "
-             "opacity='0.5'/>")
-    p.append("<ellipse cx='1530' cy='44' rx='180' ry='115' fill='#586838' "
-             "opacity='0.5'/>")
-    p.append(_willow(150, 60, 1, 1.0, "#5f6f3f"))
-    p.append(_willow(1470, 64, -1, 1.05, "#556435"))
-    # Rain.
+    # Waterside houses (left cluster) softened by mist.
+    p.append(_house(210, 760, 152, 150, "#efebd9", "#48463a", 0.82))
+    p.append(_house(360, 770, 128, 128, "#e9e5d2", "#434136", 0.82))
+    p.append(_house(72, 774, 128, 140, "#e5e1cf", "#403e33", 0.82))
+    # Empty arched stone bridge over the canal (no figures).
+    p.append(_bridge(720, 662, 300, "#a3a683"))
+    # A translucent moon-gate arch framing the left, echoing the app icon.
+    p.append("<circle cx='150' cy='430' r='372' fill='none' stroke='#6c6a51' "
+             "stroke-width='42' opacity='0.22'/>")
+    # Willow foliage framing the two top corners.
+    p.append("<ellipse cx='80' cy='40' rx='180' ry='120' fill='#66703f' "
+             "opacity='0.46'/>")
+    p.append("<ellipse cx='1530' cy='44' rx='190' ry='120' fill='#5d6739' "
+             "opacity='0.46'/>")
+    p.append(_willow(150, 60, 1, 1.0, "#66703f"))
+    p.append(_willow(1470, 64, -1, 1.05, "#5c6636"))
+    # Gentle drifting drizzle (subtle).
     rain = []
-    for _ in range(150):
+    for _ in range(90):
         rx = rng.uniform(0, width)
         ry = rng.uniform(0, 820)
-        rl = rng.uniform(12, 26)
+        rl = rng.uniform(10, 22)
         rain.append("<line x1='%.0f' y1='%.0f' x2='%.0f' y2='%.0f'/>"
-                    % (rx, ry, rx - 7, ry + rl))
-    p.append("<g stroke='#aeb98f' stroke-width='1' opacity='0.40'>%s</g>"
+                    % (rx, ry, rx - 6, ry + rl))
+    p.append("<g stroke='#b7bd97' stroke-width='1' opacity='0.28'>%s</g>"
              % "".join(rain))
     # Foreground shelf of English classics.
     p.append(_bookshelf(rng, width, height))
-    # Cohesive rainy-green tint over everything.
-    p.append("<rect x='0' y='0' width='%d' height='%d' fill='#54663f' "
-             "opacity='0.07'/>" % (width, height))
+    # Cohesive warm sepia-green tint over everything.
+    p.append("<rect x='0' y='0' width='%d' height='%d' fill='#5c5a3d' "
+             "opacity='0.08'/>" % (width, height))
     p.append("</svg>")
     return "data:image/svg+xml;utf8," + urllib.parse.quote("".join(p))
 
 
-_BACKGROUND_DATA_URI = _background_data_uri()
+# The scene helpers above are retained for reference; the active background is
+# the blurred icon wash loaded into ``_BACKGROUND_DATA_URI`` near the top.
 
 _CSS_TEMPLATE = """
 gradio-app {
   background:
-    linear-gradient(rgba(150,166,120,0.16), rgba(74,92,58,0.30)),
-    url("__BG__") center bottom / cover no-repeat fixed !important;
+    linear-gradient(rgba(238,232,214,0.46), rgba(223,215,195,0.56)),
+    url("__BG__") center center / cover no-repeat fixed !important;
 }
 .gradio-container {
   background: transparent !important;
