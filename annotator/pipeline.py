@@ -47,7 +47,14 @@ class _Placement:
 # user like the progress bar freezing partway through. Periodically saving
 # to a temp file and reopening bounds memory to a roughly constant ceiling
 # regardless of how many pages remain.
-_CHECKPOINT_EVERY_PAGES = 40
+#
+# Measured on the real 875-page target file (web-upload config: dense
+# annotation starting at page 1, disk-backed SQLite dictionary): baseline
+# settles around 220MB and grows ~1.5MB/page between checkpoints. 80 pages
+# between checkpoints keeps the peak comfortably under 400MB (well inside a
+# 512MB host) while halving checkpoint save/reopen overhead versus a smaller
+# interval, since each checkpoint re-compacts the whole accumulated document.
+_CHECKPOINT_EVERY_PAGES = 80
 
 
 def annotate_pdf(
