@@ -130,8 +130,25 @@ def annotate_pdf(
             pages_since_checkpoint += 1
             is_last_page = pno == len(src) - 1
             if pages_since_checkpoint >= _CHECKPOINT_EVERY_PAGES and not is_last_page:
+                # NOTE: intentionally *not* using ``garbage=4`` here (unlike
+                # the final save below). ``garbage=4`` makes MuPDF do a full
+                # duplicate-object scan/renumber across the whole document,
+                # which is the most expensive garbage-collection level and
+                # scales badly with page/object count -- and this call is
+                # only an intermediate checkpoint (immediately reopened),
+                # not the final deliverable, so a fully garbage-collected
+                # file buys nothing here. On a CPU-throttled host (e.g.
+                # Render's free tier, which grants only a fraction of one
+                # vCPU), this made each checkpoint take long enough to look
+                # exactly like the progress bar permanently freezing --
+                # reproduced in practice at the very first two checkpoint
+                # boundaries (page ~80 and ~160) on the real 875-page target
+                # book. Dropping ``garbage`` (default 0, no object scan)
+                # keeps just the compression (``deflate``) benefit while
+                # making the save O(pages) instead of touching every object
+                # for deduplication.
                 ckpt_path = ckpt_paths[ckpt_toggle]
-                out.save(ckpt_path, garbage=4, deflate=True)
+                out.save(ckpt_path, deflate=True)
                 out.close()
                 out = fitz.open(ckpt_path)
                 ckpt_toggle = 1 - ckpt_toggle
