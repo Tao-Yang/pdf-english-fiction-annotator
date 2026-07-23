@@ -60,7 +60,8 @@ DICTIONARY_TILES = [
 ]
 DICTIONARY_CHOICES = [name for name, _desc, _lv in DICTIONARY_TILES]
 NAME_TO_LEVEL = {name: lv for name, _desc, lv in DICTIONARY_TILES}
-DEFAULT_DICTIONARIES = ["文学词典"]
+NAME_TO_DESC = {name: desc for name, desc, _lv in DICTIONARY_TILES}
+DEFAULT_DICTIONARY = "文学词典"
 # Lower rank == more words annotated (easier / more inclusive tier).
 _LEVEL_RANK = {"A2": 0, "B1": 1, "B2": 2, "C1": 3}
 
@@ -350,7 +351,7 @@ def _background_data_uri():
 _CSS_TEMPLATE = """
 gradio-app {
   background:
-    linear-gradient(rgba(238,232,214,0.46), rgba(223,215,195,0.56)),
+    linear-gradient(rgba(238,232,214,0.23), rgba(223,215,195,0.28)),
     url("__BG__") center center / cover no-repeat fixed !important;
 }
 .gradio-container {
@@ -395,12 +396,15 @@ gradio-app {
 }
 #dict-picker { margin: 0 auto 4px; border: none !important; background: transparent !important; }
 #dict-picker [data-testid="checkbox-group"],
+#dict-picker [data-testid="radio-group"],
 #dict-picker fieldset, #dict-picker .wrap {
   display: flex !important; flex-wrap: wrap !important;
   gap: 18px !important; justify-content: center !important;
   border: none !important; background: transparent !important;
+  overflow: visible !important;
 }
 #dict-picker label {
+  position: relative;
   flex: 1 1 180px; min-width: 168px; max-width: 260px;
   display: flex !important; align-items: center; justify-content: center;
   padding: 22px 12px; border-radius: 18px;
@@ -412,7 +416,8 @@ gradio-app {
   box-shadow: 0 6px 16px rgba(50,60,40,0.12);
 }
 #dict-picker label:hover { border-color: #3f7a4e; transform: translateY(-3px); }
-#dict-picker input[type="checkbox"] {
+#dict-picker input[type="checkbox"],
+#dict-picker input[type="radio"] {
   position: absolute !important; opacity: 0 !important; width: 0 !important;
   height: 0 !important; margin: 0 !important;
 }
@@ -420,6 +425,29 @@ gradio-app {
   background: #3f7a4e !important; color: #fdfbf0 !important;
   border-color: #2e6b45; box-shadow: 0 10px 24px rgba(46,107,69,0.38);
 }
+/* Per-dictionary usage note: hidden by default, floats in on hover. */
+#dict-picker label[data-desc]::after {
+  content: attr(data-desc);
+  position: absolute; top: calc(100% + 10px); left: 50%;
+  transform: translateX(-50%) translateY(6px);
+  background: rgba(46,107,69,0.96); color: #fdfbf0;
+  font-family: "Noto Serif SC", serif;
+  font-size: 15px; letter-spacing: 2px; white-space: nowrap;
+  padding: 8px 15px; border-radius: 9px;
+  opacity: 0; pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+  box-shadow: 0 8px 20px rgba(40,55,30,0.30); z-index: 40;
+}
+#dict-picker label[data-desc]::before {
+  content: ""; position: absolute; top: calc(100% + 3px); left: 50%;
+  transform: translateX(-50%); border: 7px solid transparent;
+  border-bottom-color: rgba(46,107,69,0.96);
+  opacity: 0; pointer-events: none; transition: opacity .18s ease; z-index: 40;
+}
+#dict-picker label[data-desc]:hover::after {
+  opacity: 1; transform: translateX(-50%) translateY(0);
+}
+#dict-picker label[data-desc]:hover::before { opacity: 1; }
 #dict-legend {
   text-align: center; color: #46583a; font-size: 13px; line-height: 2;
   margin: 4px auto 16px; max-width: 780px; font-family: "Noto Serif SC", serif;
@@ -492,10 +520,32 @@ HEADER_HTML = """
 </div>
 """
 
-LEGEND_HTML = "<div id='dict-legend'>" + "".join(
-    "<span><b>%s</b> · %s</span>" % (name, desc)
-    for name, desc, _lv in DICTIONARY_TILES
-) + "<br/>可多选，注释将覆盖所选各档词汇；内置<b>明清小说词典</b>始终生效。</div>"
+# The per-dictionary usage notes are attached as hover tooltips (see the
+# ``demo.load`` JS below and the ``#dict-picker label[data-desc]`` CSS), so no
+# always-visible legend block is rendered.
+_DESC_JS_MAP = ", ".join(
+    '"%s": "%s"' % (name, desc) for name, desc, _lv in DICTIONARY_TILES
+)
+TOOLTIP_JS = """
+() => {
+  const desc = {__MAP__};
+  const attach = () => {
+    const picker = document.getElementById('dict-picker');
+    if (!picker) return false;
+    const labels = picker.querySelectorAll('label');
+    if (!labels.length) return false;
+    labels.forEach(lb => {
+      const txt = (lb.textContent || '').trim();
+      if (desc[txt]) lb.setAttribute('data-desc', desc[txt]);
+    });
+    return true;
+  };
+  if (!attach()) {
+    const obs = new MutationObserver(() => { if (attach()) obs.disconnect(); });
+    obs.observe(document.body, { childList: true, subtree: true });
+  }
+}
+""".replace("__MAP__", _DESC_JS_MAP)
 
 FOOTER_HTML = """
 <div id="app-footer">
@@ -531,22 +581,20 @@ def _ensure_assets(progress=None) -> None:
         _READY = True
 
 
-def annotate(pdf_file, dictionaries, start_page, progress=gr.Progress()):
+def annotate(pdf_file, dictionary, start_page, progress=gr.Progress()):
     if pdf_file is None:
         raise gr.Error("请先上传一个英文 PDF 文件。")
 
-    names = [d for d in (dictionaries or []) if d in NAME_TO_LEVEL]
-    if not names:
-        names = DEFAULT_DICTIONARIES
-    # The most inclusive (easiest) selected tier wins, so every chosen
-    # dictionary's vocabulary is covered.
-    level = min((NAME_TO_LEVEL[n] for n in names), key=lambda lv: _LEVEL_RANK[lv])
+    name = dictionary if dictionary in NAME_TO_LEVEL else DEFAULT_DICTIONARY
+    # The chosen tier sets how many words are annotated; the left-most
+    # (通俗词典) is the most inclusive and covers every tier to its right.
+    level = NAME_TO_LEVEL[name]
     _ensure_assets(progress)
 
     src_path = pdf_file if isinstance(pdf_file, str) else pdf_file.name
     out_dir = tempfile.mkdtemp(prefix="annotated-")
     stem = os.path.splitext(os.path.basename(src_path))[0]
-    out_path = os.path.join(out_dir, "%s-annotated-%s.pdf" % (stem, level))
+    out_path = os.path.join(out_dir, "%s-annotated-%s.pdf" % (stem, name))
 
     config = AnnotationConfig(
         cefr_level=level,
@@ -580,15 +628,14 @@ def annotate(pdf_file, dictionaries, start_page, progress=gr.Progress()):
 
 with gr.Blocks(title="伴读 · 英文原著中文注释", theme=THEME, css=CUSTOM_CSS) as demo:
     gr.HTML(HEADER_HTML)
-    gr.HTML("<div id='pick-title'>选 择 字 典 · 可 多 选</div>")
-    dictionaries = gr.CheckboxGroup(
+    gr.HTML("<div id='pick-title'>选 择 字 典 · 单 选</div>")
+    dictionaries = gr.Radio(
         choices=DICTIONARY_CHOICES,
-        value=DEFAULT_DICTIONARIES,
+        value=DEFAULT_DICTIONARY,
         show_label=False,
         container=False,
         elem_id="dict-picker",
     )
-    gr.HTML(LEGEND_HTML)
     with gr.Row(equal_height=True):
         with gr.Column(scale=1, elem_classes=["paper-card"]):
             gr.HTML("<div class='card-title'>上 传 原 著</div>")
@@ -610,6 +657,7 @@ with gr.Blocks(title="伴读 · 英文原著中文注释", theme=THEME, css=CUST
     run.click(annotate, inputs=[pdf_in, dictionaries, start_page], outputs=pdf_out)
 
     gr.HTML(FOOTER_HTML)
+    demo.load(None, None, None, js=TOOLTIP_JS)
 
 
 if __name__ == "__main__":
