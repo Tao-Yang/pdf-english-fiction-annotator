@@ -34,12 +34,18 @@ from prepare_assets import DB_FILENAME, ensure_ecdict_database  # noqa: E402
 # Optional chunked/concurrent annotation. Splitting the book into small
 # page-range chunks bounds each worker's memory to a few pages instead of
 # the whole book, and multiple chunks can be annotated at once on hosts with
-# more than one CPU. Each worker independently pays a one-time ~150-200MB
-# NLTK/wordfreq/dictionary load, so keep ANNOTATOR_MAX_WORKERS conservative
-# on memory-constrained hosts (e.g. Render's free 512MB tier) -- the default
-# of 1 keeps today's proven sequential behavior; raise it only on hosts with
-# known extra headroom (RAM and CPU cores).
-ANNOTATOR_MAX_WORKERS = int(os.environ.get("ANNOTATOR_MAX_WORKERS", "1"))
+# more than one CPU. annotate_pdf_parallel() now pre-builds the heavy
+# NLTK/wordfreq/dictionary state in the parent process before forking
+# workers, so on Linux (Render/HF Spaces/most Docker hosts, which default to
+# the "fork" start method) workers share that load via copy-on-write instead
+# of each paying it independently -- and it further self-clamps
+# max_workers against the container's detected memory limit, so requesting
+# more workers than the host can afford degrades to a safe number instead of
+# risking an OOM kill (which used to look like the progress bar freezing
+# partway through). That safety net means 4 workers / 10-page chunks is a
+# reasonable default; override via env vars if a specific host needs
+# something different.
+ANNOTATOR_MAX_WORKERS = int(os.environ.get("ANNOTATOR_MAX_WORKERS", "4"))
 ANNOTATOR_CHUNK_PAGES = int(os.environ.get("ANNOTATOR_CHUNK_PAGES", "10"))
 
 # A writable directory for the cached dictionary. HF Spaces / most PaaS allow

@@ -18,10 +18,12 @@ The output PDF has the same page count and navigation as the source.
 """
 
 import json
+import multiprocessing
 import os
 import shutil
 import tempfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from typing import Callable, Dict, List, Optional, Tuple
 
 import fitz  # PyMuPDF
@@ -186,18 +188,110 @@ _worker_renderer: Optional[LabelRenderer] = None
 
 
 def _init_worker(config: AnnotationConfig) -> None:
-    """Pool initializer: build the per-process Dictionary/Selector/Renderer.
+    """Build the per-process Dictionary/Selector/Renderer, once.
 
-    Runs once when each worker process starts (or once per process, for the
-    default "fork" start method used on Linux, which is what Render / HF
-    Spaces run on), so the heavy one-time NLTK/wordfreq/dictionary load is
-    not repeated for every chunk handled by that worker.
+    This is called twice, by design:
+
+    1. Once in the *parent* process, right before the ``ProcessPoolExecutor``
+       is created (see :func:`annotate_pdf_parallel`). On Linux (Render, HF
+       Spaces, most Docker hosts), ``multiprocessing`` defaults to the
+       "fork" start method, so every worker process is a copy-on-write clone
+       of the parent's memory *at fork time*. Pre-building the heavy,
+       largely-read-only NLTK/wordfreq/dictionary state in the parent means
+       every forked worker inherits it for free (shared physical pages)
+       instead of allocating its own independent copy.
+    2. As the ``ProcessPoolExecutor`` initializer, so platforms that use
+       "spawn" instead (Windows, macOS) -- where a worker starts as a fresh
+       interpreter with no inherited memory -- still build their own copy
+       correctly.
+
+    The early-return guard is what makes this safe to call twice: on a
+    forked worker the globals are already populated (inherited from the
+    parent), so the second call is a no-op and the copy-on-write pages are
+    never touched/duplicated by re-running the loaders.
     """
     global _worker_config, _worker_selector, _worker_renderer
+    if _worker_selector is not None:
+        return
     _worker_config = config
     dictionary = Dictionary(config.ecdict_path, config.historical_glossary_path)
     _worker_selector = WordSelector(config, dictionary)
     _worker_renderer = LabelRenderer(config)
+
+
+# --- Memory-aware worker cap ---------------------------------------------
+#
+# Even with the copy-on-write sharing above, letting a caller (e.g. the
+# webapp, via ANNOTATOR_MAX_WORKERS) request more workers than the host can
+# actually afford leads to the whole container getting OOM-killed by the
+# platform -- which looks to the user like the progress bar silently
+# freezing partway through (the request never comes back because the
+# process that was going to answer it no longer exists). Rather than trust
+# the caller, clamp to a conservative estimate of what fits.
+
+_SHARED_MEMORY_PER_WORKER_MB = 60  # fork: small per-worker overhead once CoW-shared
+_UNSHARED_MEMORY_PER_WORKER_MB = 220  # spawn: full independent NLTK/dict load
+_BASELINE_MEMORY_MB = 260  # main process + one shared dictionary/NLTK load
+_MEMORY_SAFETY_MARGIN = 0.8  # only plan against 80% of the detected limit
+
+
+def _detect_memory_limit_bytes() -> Optional[int]:
+    """Best-effort container/host memory limit, or ``None`` if unknown.
+
+    Checks cgroup v2, then cgroup v1 (how Docker/Render/HF Spaces/Railway
+    enforce a container's memory limit on Linux), then falls back to total
+    physical RAM reported by the OS.
+    """
+    for path in (
+        "/sys/fs/cgroup/memory.max",  # cgroup v2
+        "/sys/fs/cgroup/memory/memory.limit_in_bytes",  # cgroup v1
+    ):
+        try:
+            with open(path) as fh:
+                raw = fh.read().strip()
+        except OSError:
+            continue
+        if raw == "max":
+            continue
+        try:
+            value = int(raw)
+        except ValueError:
+            continue
+        # cgroup v1 reports a huge sentinel (close to 2**63) when unlimited.
+        if 0 < value < (1 << 62):
+            return value
+    try:
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        phys_pages = os.sysconf("SC_PHYS_PAGES")
+    except (ValueError, OSError, AttributeError):
+        return None
+    if page_size > 0 and phys_pages > 0:
+        return page_size * phys_pages
+    return None
+
+
+def _safe_max_workers(requested: int) -> int:
+    """Clamp ``requested`` worker count to what the host can safely afford.
+
+    Falls back to ``requested`` unchanged if the memory limit can't be
+    detected (e.g. non-Linux dev machines), since in that case we have no
+    better information than what the caller asked for.
+    """
+    if requested <= 1:
+        return max(1, requested)
+    limit_bytes = _detect_memory_limit_bytes()
+    if limit_bytes is None:
+        return requested
+    limit_mb = limit_bytes / (1024 * 1024)
+    can_share = multiprocessing.get_start_method() == "fork"
+    per_worker_mb = (
+        _SHARED_MEMORY_PER_WORKER_MB if can_share else _UNSHARED_MEMORY_PER_WORKER_MB
+    )
+    budget_mb = limit_mb * _MEMORY_SAFETY_MARGIN - _BASELINE_MEMORY_MB
+    if budget_mb <= 0:
+        return 1
+    safe = max(1, int(budget_mb // per_worker_mb))
+    return min(requested, safe)
 
 
 def _annotate_chunk(
@@ -251,10 +345,17 @@ def annotate_pdf_parallel(
     every single page, since whole chunks complete at a time and may finish
     out of order).
 
-    ``max_workers`` defaults to ``min(4, os.cpu_count() or 1)``. Keep this
-    conservative on memory-constrained hosts: each worker independently
-    loads NLTK/wordfreq/the dictionary (~150-200MB), so ``max_workers=2``
-    roughly doubles that fixed overhead versus a single sequential run.
+    ``max_workers`` defaults to ``min(4, os.cpu_count() or 1)``, then is
+    further clamped by :func:`_safe_max_workers` to whatever the host's
+    detected memory limit (cgroup limit on Linux, else total RAM) can
+    actually afford -- see that function for the reasoning. This mostly
+    matters on fork-based hosts (Linux) where the parent-process pre-init
+    below lets workers share the heavy NLTK/wordfreq/dictionary load via
+    copy-on-write instead of each paying it independently; without that cap
+    a caller requesting more workers than the host can hold risks the whole
+    container getting OOM-killed mid-run (which looks like the progress bar
+    silently freezing, since the process that would answer the request no
+    longer exists).
     """
     config = config or AnnotationConfig()
     if output_path is None:
@@ -263,6 +364,12 @@ def annotate_pdf_parallel(
     if chunk_pages < 1:
         raise ValueError("chunk_pages must be >= 1")
     max_workers = max_workers or min(4, os.cpu_count() or 1)
+    max_workers = _safe_max_workers(max_workers)
+
+    # Pre-build the heavy Dictionary/WordSelector/LabelRenderer in *this*
+    # (parent) process before any worker is forked, so fork-based platforms
+    # share the load via copy-on-write (see _init_worker's docstring).
+    _init_worker(config)
 
     src = fitz.open(input_path)
     total_pages = len(src)
@@ -291,23 +398,30 @@ def annotate_pdf_parallel(
 
     try:
         pages_done = 0
-        with ProcessPoolExecutor(
-            max_workers=max_workers, initializer=_init_worker, initargs=(config,)
-        ) as pool:
-            futures = {
-                pool.submit(
-                    _annotate_chunk, (input_path, start, end, chunk_paths[start])
-                ): (start, end)
-                for start, end in chunk_ranges
-            }
-            for future in as_completed(futures):
-                start, end = futures[future]
-                _, _, pages_annotated, annotations = future.result()
-                stats["pages_annotated"] += pages_annotated
-                stats["annotations"] += annotations
-                pages_done += end - start
-                if progress_cb:
-                    progress_cb(pages_done - 1, total_pages)
+        try:
+            with ProcessPoolExecutor(
+                max_workers=max_workers, initializer=_init_worker, initargs=(config,)
+            ) as pool:
+                futures = {
+                    pool.submit(
+                        _annotate_chunk, (input_path, start, end, chunk_paths[start])
+                    ): (start, end)
+                    for start, end in chunk_ranges
+                }
+                for future in as_completed(futures):
+                    start, end = futures[future]
+                    _, _, pages_annotated, annotations = future.result()
+                    stats["pages_annotated"] += pages_annotated
+                    stats["annotations"] += annotations
+                    pages_done += end - start
+                    if progress_cb:
+                        progress_cb(pages_done - 1, total_pages)
+        except BrokenProcessPool as exc:
+            raise RuntimeError(
+                "A worker process crashed (most likely out of memory) after "
+                "annotating %d/%d pages. Try lowering ANNOTATOR_MAX_WORKERS "
+                "and/or ANNOTATOR_CHUNK_PAGES." % (pages_done, total_pages)
+            ) from exc
 
         # Merge chunks back in original page order.
         out = fitz.open()
