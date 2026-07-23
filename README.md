@@ -4,7 +4,7 @@
 Add concise, non-obstructive **Chinese vocabulary annotations** to English-fiction
 PDFs. Glosses are placed in a widened right margin, aligned to each word, and the
 original page content, links and bookmarks are preserved untouched.
-<img width="720" height="584" alt="image" src="https://github.com/user-attachments/assets/f9c98a51-9042-4183-ba60-d141d523b356" />
+<img width="1062" height="867" alt="image" src="https://github.com/user-attachments/assets/ba31f528-c1a1-47cd-a959-7e7e521b0409" />
 
 
 
