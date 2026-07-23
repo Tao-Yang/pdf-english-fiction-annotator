@@ -18,7 +18,6 @@ The output PDF has the same page count and navigation as the source.
 """
 
 import json
-import multiprocessing
 import os
 import shutil
 import tempfile
@@ -190,29 +189,25 @@ _worker_renderer: Optional[LabelRenderer] = None
 def _init_worker(config: AnnotationConfig) -> None:
     """Build the per-process Dictionary/Selector/Renderer, once.
 
-    This is called twice, by design:
+    Used as the ``ProcessPoolExecutor`` initializer, so it always runs
+    *inside* the worker process, after it has started, and only builds this
+    process's own independent copy of the NLTK/wordfreq/dictionary state.
 
-    1. Once in the *parent* process, right before the ``ProcessPoolExecutor``
-       is created (see :func:`annotate_pdf_parallel`). On Linux (Render, HF
-       Spaces, most Docker hosts), ``multiprocessing`` defaults to the
-       "fork" start method, so every worker process is a copy-on-write clone
-       of the parent's memory *at fork time*. Pre-building the heavy,
-       largely-read-only NLTK/wordfreq/dictionary state in the parent means
-       every forked worker inherits it for free (shared physical pages)
-       instead of allocating its own independent copy.
-    2. As the ``ProcessPoolExecutor`` initializer, so platforms that use
-       "spawn" instead (Windows, macOS) -- where a worker starts as a fresh
-       interpreter with no inherited memory -- still build their own copy
-       correctly.
-
-    The early-return guard is what makes this safe to call twice: on a
-    forked worker the globals are already populated (inherited from the
-    parent), so the second call is a no-op and the copy-on-write pages are
-    never touched/duplicated by re-running the loaders.
+    Earlier this also pre-built the same state in the *parent* process
+    before forking, hoping fork-based hosts (Linux) would let workers
+    inherit it via copy-on-write instead of loading it themselves. That
+    caused a worse regression: forking a live, multi-threaded server
+    process (the webapp's request handler runs on one of several threads)
+    can inherit half-acquired internal locks from other still-running
+    threads, which then deadlock forever in the child with no exception
+    raised -- observed as the progress bar getting stuck at the initial 40%
+    marker with not even one chunk ever completing. Building fresh, per-
+    process state only after the worker process has fully started (as done
+    here) avoids that hazard; the memory cost is paid independently by each
+    worker, which is why ``_safe_max_workers`` below budgets for the full
+    per-worker cost rather than assuming any sharing.
     """
     global _worker_config, _worker_selector, _worker_renderer
-    if _worker_selector is not None:
-        return
     _worker_config = config
     dictionary = Dictionary(config.ecdict_path, config.historical_glossary_path)
     _worker_selector = WordSelector(config, dictionary)
@@ -221,17 +216,17 @@ def _init_worker(config: AnnotationConfig) -> None:
 
 # --- Memory-aware worker cap ---------------------------------------------
 #
-# Even with the copy-on-write sharing above, letting a caller (e.g. the
-# webapp, via ANNOTATOR_MAX_WORKERS) request more workers than the host can
-# actually afford leads to the whole container getting OOM-killed by the
-# platform -- which looks to the user like the progress bar silently
-# freezing partway through (the request never comes back because the
-# process that was going to answer it no longer exists). Rather than trust
-# the caller, clamp to a conservative estimate of what fits.
+# Letting a caller (e.g. the webapp, via ANNOTATOR_MAX_WORKERS) request more
+# workers than the host can actually afford leads to the whole container
+# getting OOM-killed by the platform -- which looks to the user like the
+# progress bar silently freezing partway through (the request never comes
+# back because the process that was going to answer it no longer exists).
+# Rather than trust the caller, clamp to a conservative estimate of what
+# fits, assuming each worker independently pays the full NLTK/wordfreq/
+# dictionary load cost (~150-200MB measured on the real target book).
 
-_SHARED_MEMORY_PER_WORKER_MB = 60  # fork: small per-worker overhead once CoW-shared
-_UNSHARED_MEMORY_PER_WORKER_MB = 220  # spawn: full independent NLTK/dict load
-_BASELINE_MEMORY_MB = 260  # main process + one shared dictionary/NLTK load
+_MEMORY_PER_WORKER_MB = 220
+_BASELINE_MEMORY_MB = 150  # main process, before any worker is started
 _MEMORY_SAFETY_MARGIN = 0.8  # only plan against 80% of the detected limit
 
 
@@ -283,14 +278,10 @@ def _safe_max_workers(requested: int) -> int:
     if limit_bytes is None:
         return requested
     limit_mb = limit_bytes / (1024 * 1024)
-    can_share = multiprocessing.get_start_method() == "fork"
-    per_worker_mb = (
-        _SHARED_MEMORY_PER_WORKER_MB if can_share else _UNSHARED_MEMORY_PER_WORKER_MB
-    )
     budget_mb = limit_mb * _MEMORY_SAFETY_MARGIN - _BASELINE_MEMORY_MB
     if budget_mb <= 0:
         return 1
-    safe = max(1, int(budget_mb // per_worker_mb))
+    safe = max(1, int(budget_mb // _MEMORY_PER_WORKER_MB))
     return min(requested, safe)
 
 
@@ -348,14 +339,14 @@ def annotate_pdf_parallel(
     ``max_workers`` defaults to ``min(4, os.cpu_count() or 1)``, then is
     further clamped by :func:`_safe_max_workers` to whatever the host's
     detected memory limit (cgroup limit on Linux, else total RAM) can
-    actually afford -- see that function for the reasoning. This mostly
-    matters on fork-based hosts (Linux) where the parent-process pre-init
-    below lets workers share the heavy NLTK/wordfreq/dictionary load via
-    copy-on-write instead of each paying it independently; without that cap
-    a caller requesting more workers than the host can hold risks the whole
-    container getting OOM-killed mid-run (which looks like the progress bar
-    silently freezing, since the process that would answer the request no
-    longer exists).
+    actually afford -- see that function for the reasoning. Each worker
+    independently pays the NLTK/wordfreq/dictionary load cost (built lazily
+    inside the worker process itself, by :func:`_init_worker`, once the
+    ``ProcessPoolExecutor`` has actually started it) rather than sharing it
+    with the parent; without this cap a caller requesting more workers than
+    the host can hold risks the whole container getting OOM-killed mid-run
+    (which looks like the progress bar silently freezing, since the process
+    that would answer the request no longer exists).
     """
     config = config or AnnotationConfig()
     if output_path is None:
@@ -365,11 +356,6 @@ def annotate_pdf_parallel(
         raise ValueError("chunk_pages must be >= 1")
     max_workers = max_workers or min(4, os.cpu_count() or 1)
     max_workers = _safe_max_workers(max_workers)
-
-    # Pre-build the heavy Dictionary/WordSelector/LabelRenderer in *this*
-    # (parent) process before any worker is forked, so fork-based platforms
-    # share the load via copy-on-write (see _init_worker's docstring).
-    _init_worker(config)
 
     src = fitz.open(input_path)
     total_pages = len(src)
