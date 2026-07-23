@@ -22,18 +22,49 @@ _POS_PREFIX_RE = re.compile(r"^[a-z]{1,5}\.\s*")
 
 
 class Dictionary:
-    """Lazy in-memory ECDICT lookup keyed by lower-cased headword."""
+    """Lazy in-memory ECDICT lookup keyed by lower-cased headword.
 
-    def __init__(self, ecdict_path: str) -> None:
+    An optional ``extra_path`` points at a small CSV of hand-compiled
+    ``term,chinese`` pairs (e.g. Ming/Qing official titles and historical
+    terminology commonly found in scholarly novel translations but absent
+    from a general-purpose dictionary like ECDICT). Entries in that file take
+    priority over ECDICT and support multi-word phrases.
+    """
+
+    def __init__(self, ecdict_path: str, extra_path: Optional[str] = None) -> None:
         self._path = ecdict_path
         self._table: Optional[Dict[str, str]] = None
         self._db: Optional[sqlite3.Connection] = None
         self._cache: Dict[str, Optional[str]] = {}
+        self._extra_path = extra_path
+        self._extra_table: Optional[Dict[str, str]] = None
+
+    def _load_extra(self) -> Dict[str, str]:
+        if self._extra_table is not None:
+            return self._extra_table
+        table: Dict[str, str] = {}
+        if self._extra_path and os.path.isfile(self._extra_path):
+            with open(self._extra_path, "r", encoding="utf-8-sig", newline="") as fh:
+                reader = csv.DictReader(fh)
+                for row in reader:
+                    term = (row.get("term") or "").strip().lower()
+                    gloss = (row.get("chinese") or "").strip()
+                    if term and gloss:
+                        table[term] = gloss
+        self._extra_table = table
+        return table
 
     def _raw_gloss(self, word: str) -> Optional[str]:
         key = word.strip().lower()
         if key in self._cache:
             return self._cache[key]
+
+        extra = self._load_extra().get(key)
+        if extra:
+            if len(self._cache) >= 8192:
+                self._cache.clear()
+            self._cache[key] = extra
+            return extra
 
         if self._path.lower().endswith((".sqlite", ".sqlite3", ".db")):
             if self._db is None:

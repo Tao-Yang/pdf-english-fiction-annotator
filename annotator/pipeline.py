@@ -54,7 +54,7 @@ def annotate_pdf(
         stem, _ext = os.path.splitext(input_path)
         output_path = "%s-annotated-%s.pdf" % (stem, config.cefr_level.upper())
 
-    dictionary = Dictionary(config.ecdict_path)
+    dictionary = Dictionary(config.ecdict_path, config.historical_glossary_path)
     selector = WordSelector(config, dictionary)
     renderer = LabelRenderer(config)
 

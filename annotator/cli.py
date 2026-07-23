@@ -44,6 +44,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to the ECDICT csv dictionary (default: data/ecdict.csv).",
     )
     parser.add_argument(
+        "--historical-glossary",
+        default="data/ming_qing_titles.csv",
+        help="Path to the Ming/Qing official-title glossary csv "
+        "(default: data/ming_qing_titles.csv). Checked before ECDICT.",
+    )
+    parser.add_argument(
         "--start-page",
         type=int,
         default=None,
@@ -76,7 +82,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
 
-    config = AnnotationConfig(cefr_level=args.level, ecdict_path=args.ecdict)
+    config = AnnotationConfig(
+        cefr_level=args.level,
+        ecdict_path=args.ecdict,
+        historical_glossary_path=args.historical_glossary,
+    )
     if args.start_page is not None:
         config.start_page = args.start_page
     if args.min_notes is not None:

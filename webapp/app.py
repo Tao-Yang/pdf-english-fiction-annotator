@@ -34,6 +34,13 @@ DATA_DIR = os.environ.get("ANNOTATOR_DATA_DIR") or os.path.join(
     tempfile.gettempdir(), "pdf-annotator-data"
 )
 ECDICT_PATH = os.path.join(DATA_DIR, DB_FILENAME)
+# Small hand-compiled Ming/Qing official-title glossary shipped in the repo;
+# resolved relative to this file so it works regardless of the process cwd.
+HISTORICAL_GLOSSARY_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data",
+    "ming_qing_titles.csv",
+)
 
 _READY = False
 _ASSET_LOCK = threading.Lock()
@@ -70,7 +77,11 @@ def annotate(pdf_file, level, start_page, progress=gr.Progress()):
     stem = os.path.splitext(os.path.basename(src_path))[0]
     out_path = os.path.join(out_dir, "%s-annotated-%s.pdf" % (stem, level))
 
-    config = AnnotationConfig(cefr_level=level, ecdict_path=ECDICT_PATH)
+    config = AnnotationConfig(
+        cefr_level=level,
+        ecdict_path=ECDICT_PATH,
+        historical_glossary_path=HISTORICAL_GLOSSARY_PATH,
+    )
     if start_page is not None and str(start_page).strip() != "":
         try:
             # UI value is a 1-based page number; config.start_page is 0-based.

@@ -116,6 +116,10 @@ class AnnotationConfig:
     # --- Dictionary ---------------------------------------------------------
     # Path to ECDICT csv (word,phonetic,definition,translation,pos,...).
     ecdict_path: str = field(default="data/ecdict.csv")
+    # Path to a small hand-compiled ``term,chinese`` CSV of Ming/Qing official
+    # titles and historical terminology. Checked before ECDICT and supports
+    # multi-word phrases (e.g. "grand secretary", "censor-in-chief").
+    historical_glossary_path: str = field(default="data/ming_qing_titles.csv")
 
     def zipf_threshold(self) -> float:
         """Return the Zipf frequency cutoff for the configured CEFR level."""
