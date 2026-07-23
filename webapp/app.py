@@ -425,29 +425,18 @@ gradio-app {
   background: #3f7a4e !important; color: #fdfbf0 !important;
   border-color: #2e6b45; box-shadow: 0 10px 24px rgba(46,107,69,0.38);
 }
-/* Per-dictionary usage note: hidden by default, floats in on hover. */
-#dict-picker label[data-desc]::after {
-  content: attr(data-desc);
-  position: absolute; top: calc(100% + 10px); left: 50%;
-  transform: translateX(-50%) translateY(6px);
+/* Per-dictionary usage note: a dynamic tooltip that follows the cursor and
+   vanishes on mouse-out (not a fixed dropdown-style callout box). */
+#dict-tip {
+  position: fixed; z-index: 9999; pointer-events: none;
   background: rgba(46,107,69,0.96); color: #fdfbf0;
   font-family: "Noto Serif SC", serif;
   font-size: 15px; letter-spacing: 2px; white-space: nowrap;
-  padding: 8px 15px; border-radius: 9px;
-  opacity: 0; pointer-events: none;
-  transition: opacity .18s ease, transform .18s ease;
-  box-shadow: 0 8px 20px rgba(40,55,30,0.30); z-index: 40;
+  padding: 7px 14px; border-radius: 9px;
+  box-shadow: 0 8px 20px rgba(40,55,30,0.30);
+  opacity: 0; transition: opacity .15s ease;
 }
-#dict-picker label[data-desc]::before {
-  content: ""; position: absolute; top: calc(100% + 3px); left: 50%;
-  transform: translateX(-50%); border: 7px solid transparent;
-  border-bottom-color: rgba(46,107,69,0.96);
-  opacity: 0; pointer-events: none; transition: opacity .18s ease; z-index: 40;
-}
-#dict-picker label[data-desc]:hover::after {
-  opacity: 1; transform: translateX(-50%) translateY(0);
-}
-#dict-picker label[data-desc]:hover::before { opacity: 1; }
+#dict-tip.show { opacity: 1; }
 #dict-legend {
   text-align: center; color: #46583a; font-size: 13px; line-height: 2;
   margin: 4px auto 16px; max-width: 780px; font-family: "Noto Serif SC", serif;
@@ -516,34 +505,53 @@ HEADER_HTML = """
 <div id="app-header">
   <h1>英 文 原 著 伴 读</h1>
   <p class="ah-sub">你的第一本英文原著，我陪你读完</p>
-  <p class="ah-desc">上传一本英文原版小说的 PDF，为其中的生词、短语与习语添上简洁的中文释义。注释安放在页面右侧扩展出的留白处，不遮挡原文，原书排版与目录链接保持如初。</p>
+  <p class="ah-desc">上传一本英文原著 PDF，系统会在不破坏原有排版的前提下，于页面右侧自然延展开注释区域。它不仅解释生词、短语与习语，更会对书中出现的人物生平、历史官职、地理位置、社会风俗乃至俚语典故进行补充说明。原文始终保持完整阅读体验，目录导航与页码结构均与原书一致。你读到的依然是那本书，只是身边多了一位博学而安静的伴读者。</p>
 </div>
 """
 
-# The per-dictionary usage notes are attached as hover tooltips (see the
-# ``demo.load`` JS below and the ``#dict-picker label[data-desc]`` CSS), so no
-# always-visible legend block is rendered.
+# The per-dictionary usage notes are shown as a dynamic tooltip that follows
+# the cursor while hovering a tile and disappears on mouse-out (see the
+# ``demo.load`` JS below and the ``#dict-tip`` CSS), so no always-visible
+# legend block is rendered.
 _DESC_JS_MAP = ", ".join(
     '"%s": "%s"' % (name, desc) for name, desc, _lv in DICTIONARY_TILES
 )
 TOOLTIP_JS = """
 () => {
   const desc = {__MAP__};
+  let tip = document.getElementById('dict-tip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'dict-tip';
+    document.body.appendChild(tip);
+  }
   const attach = () => {
     const picker = document.getElementById('dict-picker');
     if (!picker) return false;
     const labels = picker.querySelectorAll('label');
     if (!labels.length) return false;
     labels.forEach(lb => {
+      if (lb.dataset.tipBound) return;
       const txt = (lb.textContent || '').trim();
-      if (desc[txt]) lb.setAttribute('data-desc', desc[txt]);
+      if (!desc[txt]) return;
+      lb.dataset.tipBound = '1';
+      lb.addEventListener('mouseenter', () => {
+        tip.textContent = desc[txt];
+        tip.classList.add('show');
+      });
+      lb.addEventListener('mousemove', (e) => {
+        tip.style.left = (e.clientX + 16) + 'px';
+        tip.style.top = (e.clientY + 18) + 'px';
+      });
+      lb.addEventListener('mouseleave', () => {
+        tip.classList.remove('show');
+      });
     });
     return true;
   };
-  if (!attach()) {
-    const obs = new MutationObserver(() => { if (attach()) obs.disconnect(); });
-    obs.observe(document.body, { childList: true, subtree: true });
-  }
+  attach();
+  const obs = new MutationObserver(() => { attach(); });
+  obs.observe(document.body, { childList: true, subtree: true });
 }
 """.replace("__MAP__", _DESC_JS_MAP)
 
@@ -628,7 +636,6 @@ def annotate(pdf_file, dictionary, start_page, progress=gr.Progress()):
 
 with gr.Blocks(title="伴读 · 英文原著中文注释", theme=THEME, css=CUSTOM_CSS) as demo:
     gr.HTML(HEADER_HTML)
-    gr.HTML("<div id='pick-title'>选 择 字 典 · 单 选</div>")
     dictionaries = gr.Radio(
         choices=DICTIONARY_CHOICES,
         value=DEFAULT_DICTIONARY,
