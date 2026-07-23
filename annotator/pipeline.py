@@ -265,24 +265,69 @@ def _detect_memory_limit_bytes() -> Optional[int]:
     return None
 
 
+def _detect_cpu_quota() -> Optional[float]:
+    """Best-effort container CPU quota (in whole-core units), or ``None``.
+
+    Platforms like Render/Railway/HF Spaces commonly grant free/cheap tiers
+    only a *fraction* of one vCPU (e.g. 0.1-0.5 cores) via a cgroup CPU
+    quota, even though ``os.cpu_count()`` still reports the host's full
+    core count. Spawning as many worker *processes* as ``os.cpu_count()``
+    suggests, when the container is actually only entitled to a sliver of
+    one core, causes those processes to fiercely contend for the same tiny
+    slice of CPU time -- the resulting scheduling/throttling overhead can
+    make the whole run dramatically slower than running sequentially,
+    which looks to the user exactly like the progress bar freezing.
+    """
+    # cgroup v2: "$MAX $PERIOD" in microseconds, or "max $PERIOD" if unlimited.
+    try:
+        with open("/sys/fs/cgroup/cpu.max") as fh:
+            quota_str, period_str = fh.read().split()
+        if quota_str != "max":
+            quota, period = int(quota_str), int(period_str)
+            if period > 0:
+                return quota / period
+    except (OSError, ValueError):
+        pass
+    # cgroup v1: separate quota/period files; quota of -1 means unlimited.
+    try:
+        with open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us") as fh:
+            quota = int(fh.read().strip())
+        with open("/sys/fs/cgroup/cpu/cpu.cfs_period_us") as fh:
+            period = int(fh.read().strip())
+        if quota > 0 and period > 0:
+            return quota / period
+    except (OSError, ValueError):
+        pass
+    return None
+
+
 def _safe_max_workers(requested: int) -> int:
     """Clamp ``requested`` worker count to what the host can safely afford.
 
-    Falls back to ``requested`` unchanged if the memory limit can't be
-    detected (e.g. non-Linux dev machines), since in that case we have no
-    better information than what the caller asked for.
+    Falls back to ``requested`` unchanged if neither the memory limit nor
+    the CPU quota can be detected (e.g. non-Linux dev machines), since in
+    that case we have no better information than what the caller asked for.
     """
     if requested <= 1:
         return max(1, requested)
+
+    safe = requested
+
     limit_bytes = _detect_memory_limit_bytes()
-    if limit_bytes is None:
-        return requested
-    limit_mb = limit_bytes / (1024 * 1024)
-    budget_mb = limit_mb * _MEMORY_SAFETY_MARGIN - _BASELINE_MEMORY_MB
-    if budget_mb <= 0:
-        return 1
-    safe = max(1, int(budget_mb // _MEMORY_PER_WORKER_MB))
-    return min(requested, safe)
+    if limit_bytes is not None:
+        limit_mb = limit_bytes / (1024 * 1024)
+        budget_mb = limit_mb * _MEMORY_SAFETY_MARGIN - _BASELINE_MEMORY_MB
+        safe = min(safe, 1 if budget_mb <= 0 else max(1, int(budget_mb // _MEMORY_PER_WORKER_MB)))
+
+    cpu_quota = _detect_cpu_quota()
+    if cpu_quota is not None:
+        # A container with < 1 full core to itself gains nothing from
+        # extra worker processes -- they'd just contend for the same
+        # sliver of CPU time. Only allow >1 worker once the quota covers
+        # at least that many whole cores.
+        safe = min(safe, max(1, int(cpu_quota)))
+
+    return max(1, safe)
 
 
 def _annotate_chunk(
