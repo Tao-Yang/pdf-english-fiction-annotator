@@ -15,7 +15,9 @@ on first use, caching them under a writable data directory.
 
 import os
 import base64
+import queue
 import random
+import shutil
 import sys
 import tempfile
 import threading
@@ -669,42 +671,99 @@ def annotate(pdf_file, dictionary, start_page, resume_pdf, progress=gr.Progress(
         frac = 0.4 + 0.58 * (pno + 1) / max(total, 1)
         progress(frac, desc="正在生成注释：第 %d / %d 页…" % (pno + 1, total))
 
-    try:
-        # Use the single-process sequential path. Two consecutive live
-        # retests of routing everything through ``annotate_pdf_parallel``
-        # (with mp_context="spawn", even after deferring Gradio UI
-        # construction to the __main__ guard) failed to complete even a
-        # single 10-page chunk on Render's free tier -- worse than the
-        # sequential path, which reliably got to page 829/875 (94.7%)
-        # before hitting the native-leak slowdown this pipeline now
-        # mitigates directly (see ``fitz.TOOLS.store_shrink`` calls in
-        # ``_build_page``'s callers in annotator/pipeline.py). Rather than
-        # keep fighting spawn-context startup costs on a CPU/memory-
-        # constrained host, bound the actual native leak in-process: no
-        # extra worker processes, no redundant module re-execution, no
-        # multiprocessing startup cost at all.
-        #
-        # ``time_budget_seconds`` bounds a single request to well under
-        # Render's observed ~15-25 minute self-restart interval (see the
-        # module-level comment on ANNOTATOR_TIME_BUDGET_SECONDS), so a long
-        # book that can't finish in one shot still yields a valid partial
-        # download plus a precise resume point instead of being silently
-        # killed with nothing to show.
-        result = annotate_pdf(
-            input_path=src_path,
-            output_path=out_path,
-            config=config,
-            progress=False,
-            progress_cb=_on_page,
-            resume_from_path=resume_from_path,
-            time_budget_seconds=ANNOTATOR_TIME_BUDGET_SECONDS,
+    # annotate_pdf() runs on a background thread and reports two kinds of
+    # progress through this queue: periodic memory-bounding checkpoints
+    # (roughly every 80 pages) and, finally, a sentinel meaning it returned.
+    # The generator below re-yields each checkpoint as an incremental Gradio
+    # update (a real, downloadable partial file) *while annotation is still
+    # running*. This closes a gap the time budget alone cannot: Render's
+    # platform-level restarts (see ANNOTATOR_TIME_BUDGET_SECONDS) can kill
+    # the process at *any* moment, including mid-request, which silently
+    # drops the connection with nothing delivered no matter how the time
+    # budget is tuned. Surfacing a downloadable file every checkpoint (not
+    # just once at the very end) bounds the worst-case lost progress to one
+    # checkpoint interval (~80 pages) instead of the whole run.
+    updates: "queue.Queue" = queue.Queue()
+    outcome = {}
+
+    def _on_checkpoint(ckpt_path: str, pno: int, total: int) -> None:
+        # ckpt_path is reused/overwritten by the pipeline roughly one more
+        # checkpoint interval from now, so copy it aside immediately.
+        safe_copy = os.path.join(out_dir, "checkpoint-%d.pdf" % (pno + 1))
+        shutil.copyfile(ckpt_path, safe_copy)
+        updates.put(("checkpoint", safe_copy, pno + 1, total))
+
+    def _worker() -> None:
+        try:
+            # Use the single-process sequential path. Two consecutive live
+            # retests of routing everything through ``annotate_pdf_parallel``
+            # (with mp_context="spawn", even after deferring Gradio UI
+            # construction to the __main__ guard) failed to complete even a
+            # single 10-page chunk on Render's free tier -- worse than the
+            # sequential path, which reliably got to page 829/875 (94.7%)
+            # before hitting the native-leak slowdown this pipeline now
+            # mitigates directly (see ``fitz.TOOLS.store_shrink`` calls in
+            # ``_build_page``'s callers in annotator/pipeline.py). Rather
+            # than keep fighting spawn-context startup costs on a CPU/
+            # memory-constrained host, bound the actual native leak
+            # in-process: no extra worker processes, no redundant module
+            # re-execution, no multiprocessing startup cost at all.
+            #
+            # ``time_budget_seconds`` bounds a single request to well under
+            # Render's observed ~15-25 minute self-restart interval (see the
+            # module-level comment on ANNOTATOR_TIME_BUDGET_SECONDS), so a
+            # long book that can't finish in one shot still yields a valid
+            # partial download plus a precise resume point instead of being
+            # silently killed with nothing to show.
+            outcome["result"] = annotate_pdf(
+                input_path=src_path,
+                output_path=out_path,
+                config=config,
+                progress=False,
+                progress_cb=_on_page,
+                resume_from_path=resume_from_path,
+                time_budget_seconds=ANNOTATOR_TIME_BUDGET_SECONDS,
+                on_checkpoint=_on_checkpoint,
+            )
+        except Exception as exc:  # noqa: BLE001 - surfaced to the caller below
+            outcome["error"] = exc
+        finally:
+            updates.put(("done", None, None, None))
+
+    worker = threading.Thread(target=_worker, daemon=True)
+    worker.start()
+
+    prev_checkpoint_copy = None
+    while True:
+        kind, path, pno, total = updates.get()
+        if kind == "done":
+            break
+        # The previous checkpoint copy has already been yielded (and thus
+        # picked up by Gradio) by the time we resume here, so it is safe to
+        # remove now instead of letting per-request checkpoint copies pile
+        # up in out_dir for the whole run.
+        if prev_checkpoint_copy and os.path.exists(prev_checkpoint_copy):
+            try:
+                os.remove(prev_checkpoint_copy)
+            except OSError:
+                pass
+        prev_checkpoint_copy = path
+        yield path, (
+            "⏳ 正在处理中…已完成到第 %d / %d 页（实时进度，可随时下载已完成部分）。"
+            % (pno, total)
         )
-    except Exception as exc:
-        raise gr.Error("注释失败：%s" % exc) from exc
+
+    worker.join()
+
+    if "error" in outcome:
+        raise gr.Error("注释失败：%s" % outcome["error"])
+
+    result = outcome["result"]
 
     if result.finished:
         progress(1.0, desc="完成")
-        return result.output_path, "✅ 已完成全部 %d 页。" % result.total_pages
+        yield result.output_path, "✅ 已完成全部 %d 页。" % result.total_pages
+        return
 
     progress(1.0, desc="本次时间已用完，已保存部分结果")
     status = (
@@ -713,7 +772,7 @@ def annotate(pdf_file, dictionary, start_page, resume_pdf, progress=gr.Progress(
         "无需修改起始页，再次点击「开始注释」即可自动从第 %d 页继续。"
         % (result.next_start_page, result.total_pages, result.next_start_page + 1)
     )
-    return result.output_path, status
+    yield result.output_path, status
 
 
 

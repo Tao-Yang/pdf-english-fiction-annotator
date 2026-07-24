@@ -91,6 +91,7 @@ def annotate_pdf(
     progress_cb: Optional[Callable[[int, int], None]] = None,
     resume_from_path: Optional[str] = None,
     time_budget_seconds: Optional[float] = None,
+    on_checkpoint: Optional[Callable[[str, int, int], None]] = None,
 ) -> AnnotateResult:
     """Annotate ``input_path`` and write the result to ``output_path``.
 
@@ -116,6 +117,20 @@ def annotate_pdf(
     back a valid partial PDF plus a precise resume point lets the caller
     (e.g. the webapp) turn "silently killed with nothing to show" into
     "download what's done so far, then continue".
+
+    ``on_checkpoint``, if given, is called as ``on_checkpoint(ckpt_path, pno,
+    total_pages)`` right after every periodic memory-bounding checkpoint save
+    (see ``_CHECKPOINT_EVERY_PAGES``) -- i.e. well before ``time_budget_seconds``
+    would otherwise return a partial result. This exists because the same
+    host that periodically restarts this process outside application control
+    (see ``time_budget_seconds`` above) can do so at *any* point, including
+    mid-request -- which silently drops the connection with nothing ever
+    delivered to the caller, no matter how large ``time_budget_seconds`` is.
+    A caller that copies ``ckpt_path`` elsewhere on every callback (the file
+    is reused/overwritten roughly one more checkpoint interval later, so it
+    must be copied promptly) and hands it to the user immediately -- e.g. by
+    ``yield``-ing it as an incremental Gradio update -- bounds the worst-case
+    lost progress to one checkpoint interval instead of the whole request.
 
     Returns an ``AnnotateResult``. When ``time_budget_seconds`` is ``None``
     (the default), the run always goes to completion and
@@ -227,6 +242,8 @@ def annotate_pdf(
                 out = fitz.open(ckpt_path)
                 ckpt_toggle = 1 - ckpt_toggle
                 pages_since_checkpoint = 0
+                if on_checkpoint:
+                    on_checkpoint(ckpt_path, pno, len(src))
 
         if finished:
             # Preserve bookmarks / outline.
