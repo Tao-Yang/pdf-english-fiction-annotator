@@ -15,16 +15,12 @@ on first use, caching them under a writable data directory.
 
 import os
 import base64
-import queue
 import random
-import shutil
 import sys
 import tempfile
 import threading
 import urllib.parse
-import zipfile
 
-import fitz  # PyMuPDF
 import gradio as gr
 
 # Make the parent package importable when run as a script.
@@ -33,17 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from annotator.config import AnnotationConfig  # noqa: E402
 from annotator.nltk_setup import ensure_nltk_data  # noqa: E402
 from annotator.pipeline import annotate_pdf  # noqa: E402
-from annotator.split_merge import merge_pdfs, split_pdf  # noqa: E402
 from prepare_assets import DB_FILENAME, ensure_ecdict_database  # noqa: E402
-
-# Books at or under this size have been reliably observed to annotate
-# end-to-end in a single request on Render's free tier. Longer books should
-# be split (see split_pdf_ui/merge_pdfs_ui below) into parts at or under this
-# size, annotated separately, then merged back together -- this sidesteps
-# both the RAM ceiling and the platform's CPU-throttling-triggered restarts,
-# since each part gets its own short-lived request/process instead of one
-# long-lived one accumulating memory/CPU debt over the whole book.
-SPLIT_DEFAULT_MAX_PAGES = int(os.environ.get("ANNOTATOR_SPLIT_MAX_PAGES", "500"))
 
 # Optional chunked/concurrent annotation. Splitting the book into small
 # page-range chunks bounds each worker's memory to a few pages instead of
@@ -58,20 +44,6 @@ SPLIT_DEFAULT_MAX_PAGES = int(os.environ.get("ANNOTATOR_SPLIT_MAX_PAGES", "500")
 # different.
 ANNOTATOR_MAX_WORKERS = int(os.environ.get("ANNOTATOR_MAX_WORKERS", "4"))
 ANNOTATOR_CHUNK_PAGES = int(os.environ.get("ANNOTATOR_CHUNK_PAGES", "10"))
-
-# Render's free tier has been observed (via its own logs/metrics API) to
-# restart the running process on its own roughly every 15-25 minutes,
-# seemingly regardless of code path, deploys, or traffic -- most likely
-# severe CPU-quota throttling causing the platform's own health check to
-# time out. A single request can therefore never reliably annotate a long
-# book (e.g. 875 pages) in one shot on that host. Budgeting well under the
-# shortest observed interval means a run stops itself cleanly, with a valid
-# partial PDF and a precise resume point, instead of being silently killed
-# with nothing to show for it. Override via env var for hosts without this
-# constraint.
-ANNOTATOR_TIME_BUDGET_SECONDS = int(
-    os.environ.get("ANNOTATOR_TIME_BUDGET_SECONDS", "480")
-)
 
 # A writable directory for the cached dictionary. HF Spaces / most PaaS allow
 # writing under the app dir or /tmp.
@@ -631,7 +603,7 @@ def _ensure_assets(progress=None) -> None:
         _READY = True
 
 
-def annotate(pdf_file, dictionary, start_page, resume_pdf, progress=gr.Progress()):
+def annotate(pdf_file, dictionary, start_page, progress=gr.Progress()):
     if pdf_file is None:
         raise gr.Error("请先上传一个英文 PDF 文件。")
 
@@ -651,18 +623,7 @@ def annotate(pdf_file, dictionary, start_page, resume_pdf, progress=gr.Progress(
         ecdict_path=ECDICT_PATH,
         historical_glossary_path=HISTORICAL_GLOSSARY_PATH,
     )
-
-    # Resuming a previous, time-boxed run: the uploaded "续传" file already
-    # has its first N pages fully annotated, so pick up exactly where it
-    # left off. This overrides the manual start-page field -- the user only
-    # needs to re-upload last run's partial download and click the button
-    # again, no page counting required.
-    resume_from_path = None
-    if resume_pdf is not None:
-        resume_from_path = resume_pdf if isinstance(resume_pdf, str) else resume_pdf.name
-        with fitz.open(resume_from_path) as _rf:
-            config.start_page = len(_rf)
-    elif start_page is not None and str(start_page).strip() != "":
+    if start_page is not None and str(start_page).strip() != "":
         try:
             # UI value is a 1-based page number; config.start_page is 0-based.
             config.start_page = max(0, int(start_page) - 1)
@@ -682,159 +643,31 @@ def annotate(pdf_file, dictionary, start_page, resume_pdf, progress=gr.Progress(
         frac = 0.4 + 0.58 * (pno + 1) / max(total, 1)
         progress(frac, desc="正在生成注释：第 %d / %d 页…" % (pno + 1, total))
 
-    # annotate_pdf() runs on a background thread and reports two kinds of
-    # progress through this queue: periodic memory-bounding checkpoints
-    # (roughly every 80 pages) and, finally, a sentinel meaning it returned.
-    # The generator below re-yields each checkpoint as an incremental Gradio
-    # update (a real, downloadable partial file) *while annotation is still
-    # running*. This closes a gap the time budget alone cannot: Render's
-    # platform-level restarts (see ANNOTATOR_TIME_BUDGET_SECONDS) can kill
-    # the process at *any* moment, including mid-request, which silently
-    # drops the connection with nothing delivered no matter how the time
-    # budget is tuned. Surfacing a downloadable file every checkpoint (not
-    # just once at the very end) bounds the worst-case lost progress to one
-    # checkpoint interval (~80 pages) instead of the whole run.
-    updates: "queue.Queue" = queue.Queue()
-    outcome = {}
-
-    def _on_checkpoint(ckpt_path: str, pno: int, total: int) -> None:
-        # ckpt_path is reused/overwritten by the pipeline roughly one more
-        # checkpoint interval from now, so copy it aside immediately.
-        safe_copy = os.path.join(out_dir, "checkpoint-%d.pdf" % (pno + 1))
-        shutil.copyfile(ckpt_path, safe_copy)
-        updates.put(("checkpoint", safe_copy, pno + 1, total))
-
-    def _worker() -> None:
-        try:
-            # Use the single-process sequential path. Two consecutive live
-            # retests of routing everything through ``annotate_pdf_parallel``
-            # (with mp_context="spawn", even after deferring Gradio UI
-            # construction to the __main__ guard) failed to complete even a
-            # single 10-page chunk on Render's free tier -- worse than the
-            # sequential path, which reliably got to page 829/875 (94.7%)
-            # before hitting the native-leak slowdown this pipeline now
-            # mitigates directly (see ``fitz.TOOLS.store_shrink`` calls in
-            # ``_build_page``'s callers in annotator/pipeline.py). Rather
-            # than keep fighting spawn-context startup costs on a CPU/
-            # memory-constrained host, bound the actual native leak
-            # in-process: no extra worker processes, no redundant module
-            # re-execution, no multiprocessing startup cost at all.
-            #
-            # ``time_budget_seconds`` bounds a single request to well under
-            # Render's observed ~15-25 minute self-restart interval (see the
-            # module-level comment on ANNOTATOR_TIME_BUDGET_SECONDS), so a
-            # long book that can't finish in one shot still yields a valid
-            # partial download plus a precise resume point instead of being
-            # silently killed with nothing to show.
-            outcome["result"] = annotate_pdf(
-                input_path=src_path,
-                output_path=out_path,
-                config=config,
-                progress=False,
-                progress_cb=_on_page,
-                resume_from_path=resume_from_path,
-                time_budget_seconds=ANNOTATOR_TIME_BUDGET_SECONDS,
-                on_checkpoint=_on_checkpoint,
-            )
-        except Exception as exc:  # noqa: BLE001 - surfaced to the caller below
-            outcome["error"] = exc
-        finally:
-            updates.put(("done", None, None, None))
-
-    worker = threading.Thread(target=_worker, daemon=True)
-    worker.start()
-
-    prev_checkpoint_copy = None
-    while True:
-        kind, path, pno, total = updates.get()
-        if kind == "done":
-            break
-        # The previous checkpoint copy has already been yielded (and thus
-        # picked up by Gradio) by the time we resume here, so it is safe to
-        # remove now instead of letting per-request checkpoint copies pile
-        # up in out_dir for the whole run.
-        if prev_checkpoint_copy and os.path.exists(prev_checkpoint_copy):
-            try:
-                os.remove(prev_checkpoint_copy)
-            except OSError:
-                pass
-        prev_checkpoint_copy = path
-        yield path, (
-            "⏳ 正在处理中…已完成到第 %d / %d 页（实时进度，可随时下载已完成部分）。"
-            % (pno, total)
-        )
-
-    worker.join()
-
-    if "error" in outcome:
-        raise gr.Error("注释失败：%s" % outcome["error"])
-
-    result = outcome["result"]
-
-    if result.finished:
-        progress(1.0, desc="完成")
-        yield result.output_path, "✅ 已完成全部 %d 页。" % result.total_pages
-        return
-
-    progress(1.0, desc="本次时间已用完，已保存部分结果")
-    status = (
-        "⏸️ 处理时间较长，本次只完成到第 %d / %d 页（已保存）。\n\n"
-        "**继续注释：** 下载下面的文件，然后把它上传到左侧「续传」框中，"
-        "无需修改起始页，再次点击「开始注释」即可自动从第 %d 页继续。"
-        % (result.next_start_page, result.total_pages, result.next_start_page + 1)
-    )
-    yield result.output_path, status
-
-
-def split_pdf_ui(pdf_file, max_pages):
-    if pdf_file is None:
-        raise gr.Error("请先上传一个 PDF 文件。")
     try:
-        max_pages = int(max_pages)
-    except (TypeError, ValueError):
-        max_pages = 0
-    if max_pages <= 0:
-        raise gr.Error("请填写每份最多页数（正整数）。")
-
-    src_path = pdf_file if isinstance(pdf_file, str) else pdf_file.name
-    out_dir = tempfile.mkdtemp(prefix="split-")
-    parts = split_pdf(src_path, max_pages, out_dir)
-
-    zip_path = os.path.join(out_dir, "拆分结果.zip")
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for part_path in parts:
-            zf.write(part_path, arcname=os.path.basename(part_path))
-
-    names = "\n".join("- %s" % os.path.basename(p) for p in parts)
-    status = (
-        "✅ 已拆分为 %d 份，每份最多 %d 页：\n\n%s\n\n"
-        "下载并解压上面的 zip，把每一份分别上传到「📖 标注」页签注释、下载注释结果，"
-        "最后把所有注释好的文件一起上传到「🔗 合并结果」页签合并成一个完整文件。"
-        % (len(parts), max_pages, names)
-    )
-    return zip_path, status
-
-
-def merge_pdfs_ui(pdf_files):
-    if not pdf_files:
-        raise gr.Error("请先上传要合并的已注释 PDF 文件（可多选）。")
-    paths = [f if isinstance(f, str) else f.name for f in pdf_files]
-    # Uploaded file order is not guaranteed to match part order, but the
-    # split step names parts "..._part01.pdf", "..._part02.pdf", ... so
-    # sorting by filename recovers the correct order as long as the user
-    # doesn't rename the files.
-    paths.sort(key=lambda p: os.path.basename(p))
-
-    out_dir = tempfile.mkdtemp(prefix="merged-")
-    out_path = os.path.join(out_dir, "合并结果.pdf")
-    merge_pdfs(paths, out_path)
-
-    order = "\n".join("%d. %s" % (i + 1, os.path.basename(p)) for i, p in enumerate(paths))
-    status = "✅ 已按文件名顺序合并 %d 个文件：\n\n%s\n\n如顺序不对，请重命名文件（如 part01, part02 ...）后重新上传。" % (
-        len(paths),
-        order,
-    )
-    return out_path, status
+        # Use the single-process sequential path. Two consecutive live
+        # retests of routing everything through ``annotate_pdf_parallel``
+        # (with mp_context="spawn", even after deferring Gradio UI
+        # construction to the __main__ guard) failed to complete even a
+        # single 10-page chunk on Render's free tier -- worse than the
+        # sequential path, which reliably got to page 829/875 (94.7%)
+        # before hitting the native-leak slowdown this pipeline now
+        # mitigates directly (see ``fitz.TOOLS.store_shrink`` calls in
+        # ``_build_page``'s callers in annotator/pipeline.py). Rather than
+        # keep fighting spawn-context startup costs on a CPU/memory-
+        # constrained host, bound the actual native leak in-process: no
+        # extra worker processes, no redundant module re-execution, no
+        # multiprocessing startup cost at all.
+        result = annotate_pdf(
+            input_path=src_path,
+            output_path=out_path,
+            config=config,
+            progress=False,
+            progress_cb=_on_page,
+        )
+    except Exception as exc:
+        raise gr.Error("注释失败：%s" % exc) from exc
+    progress(1.0, desc="完成")
+    return result.output_path
 
 
 def _build_demo() -> gr.Blocks:
@@ -852,96 +685,32 @@ def _build_demo() -> gr.Blocks:
     # called under the __main__ guard means workers skip it entirely.
     with gr.Blocks(title="伴读 · 英文原著中文注释", theme=THEME, css=CUSTOM_CSS) as demo:
         gr.HTML(HEADER_HTML)
-        with gr.Tabs():
-            with gr.Tab("📖 标注"):
-                dictionaries = gr.Radio(
-                    choices=DICTIONARY_CHOICES,
-                    value=DEFAULT_DICTIONARY,
-                    show_label=False,
-                    container=False,
-                    elem_id="dict-picker",
+        dictionaries = gr.Radio(
+            choices=DICTIONARY_CHOICES,
+            value=DEFAULT_DICTIONARY,
+            show_label=False,
+            container=False,
+            elem_id="dict-picker",
+        )
+        with gr.Row(equal_height=True):
+            with gr.Column(scale=1, elem_classes=["paper-card"]):
+                gr.HTML("<div class='card-title'>上 传 原 著</div>")
+                pdf_in = gr.File(
+                    label="英文 PDF", file_types=[".pdf"], type="filepath",
+                    elem_id="pdf-in",
                 )
-                with gr.Row(equal_height=True):
-                    with gr.Column(scale=1, elem_classes=["paper-card"]):
-                        gr.HTML("<div class='card-title'>上 传 原 著</div>")
-                        gr.Markdown(
-                            "超过 %d 页的大部头建议先在「✂️ 拆分大文件」页签拆分、"
-                            "分别注释后再到「🔗 合并结果」页签合并，避免单次处理时间过长。"
-                            % SPLIT_DEFAULT_MAX_PAGES
-                        )
-                        pdf_in = gr.File(
-                            label="英文 PDF", file_types=[".pdf"], type="filepath",
-                            elem_id="pdf-in",
-                        )
-                        start_page = gr.Number(
-                            label="正文起始页（可选）",
-                            info="从第几页开始注释（1 = 第一页）。留空则从第一页开始，可填大一点以跳过前置页",
-                            value=None,
-                            precision=0,
-                        )
-                        resume_pdf_in = gr.File(
-                            label="续传：上次的部分注释文件（可选）",
-                            file_types=[".pdf"],
-                            type="filepath",
-                            elem_id="resume-in",
-                        )
-                        run = gr.Button("开 始 注 释", variant="primary", elem_id="run-btn")
-                    with gr.Column(scale=1, elem_classes=["paper-card"]):
-                        gr.HTML("<div class='card-title'>取 回 译 注</div>")
-                        pdf_out = gr.File(label="下载带注释的 PDF", elem_id="pdf-out")
-                        status_md = gr.Markdown()
-
-                run.click(
-                    annotate,
-                    inputs=[pdf_in, dictionaries, start_page, resume_pdf_in],
-                    outputs=[pdf_out, status_md],
+                start_page = gr.Number(
+                    label="正文起始页（可选）",
+                    info="从第几页开始注释（1 = 第一页）。留空则从第一页开始，可填大一点以跳过前置页",
+                    value=None,
+                    precision=0,
                 )
+                run = gr.Button("开 始 注 释", variant="primary", elem_id="run-btn")
+            with gr.Column(scale=1, elem_classes=["paper-card"]):
+                gr.HTML("<div class='card-title'>取 回 译 注</div>")
+                pdf_out = gr.File(label="下载带注释的 PDF", elem_id="pdf-out")
 
-            with gr.Tab("✂️ 拆分大文件"):
-                with gr.Row(equal_height=True):
-                    with gr.Column(scale=1, elem_classes=["paper-card"]):
-                        gr.HTML("<div class='card-title'>上 传 大 部 头</div>")
-                        split_pdf_in = gr.File(
-                            label="英文 PDF", file_types=[".pdf"], type="filepath",
-                        )
-                        split_max_pages = gr.Number(
-                            label="每份最多页数",
-                            value=SPLIT_DEFAULT_MAX_PAGES,
-                            precision=0,
-                        )
-                        split_btn = gr.Button("拆 分", variant="primary")
-                    with gr.Column(scale=1, elem_classes=["paper-card"]):
-                        gr.HTML("<div class='card-title'>取 回 分 卷</div>")
-                        split_zip_out = gr.File(label="下载拆分后的 zip", elem_id="split-zip-out")
-                        split_status_md = gr.Markdown()
-
-                split_btn.click(
-                    split_pdf_ui,
-                    inputs=[split_pdf_in, split_max_pages],
-                    outputs=[split_zip_out, split_status_md],
-                )
-
-            with gr.Tab("🔗 合并结果"):
-                with gr.Row(equal_height=True):
-                    with gr.Column(scale=1, elem_classes=["paper-card"]):
-                        gr.HTML("<div class='card-title'>上 传 各 分 卷 注 释 结 果</div>")
-                        merge_pdfs_in = gr.File(
-                            label="已注释的 PDF（可多选，按文件名顺序合并）",
-                            file_types=[".pdf"],
-                            type="filepath",
-                            file_count="multiple",
-                        )
-                        merge_btn = gr.Button("合 并", variant="primary")
-                    with gr.Column(scale=1, elem_classes=["paper-card"]):
-                        gr.HTML("<div class='card-title'>取 回 完 整 译 本</div>")
-                        merge_pdf_out = gr.File(label="下载合并后的 PDF", elem_id="merge-pdf-out")
-                        merge_status_md = gr.Markdown()
-
-                merge_btn.click(
-                    merge_pdfs_ui,
-                    inputs=[merge_pdfs_in],
-                    outputs=[merge_pdf_out, merge_status_md],
-                )
+        run.click(annotate, inputs=[pdf_in, dictionaries, start_page], outputs=pdf_out)
 
         gr.HTML(FOOTER_HTML)
         demo.load(None, None, None, js=TOOLTIP_JS)
