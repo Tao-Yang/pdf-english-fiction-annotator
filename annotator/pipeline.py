@@ -22,8 +22,10 @@ import multiprocessing
 import os
 import shutil
 import tempfile
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
+from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple
 
 import fitz  # PyMuPDF
@@ -32,6 +34,24 @@ from .config import AnnotationConfig
 from .dictionary import Dictionary
 from .renderer import LabelRenderer
 from .selector import Selected, WordSelector
+
+
+@dataclass
+class AnnotateResult:
+    """Outcome of a (possibly time-boxed) ``annotate_pdf`` call.
+
+    ``finished`` is ``False`` only when ``time_budget_seconds`` was given and
+    the budget ran out before the last page was processed. In that case
+    ``output_path`` still points at a valid, openable PDF covering pages
+    ``[0, next_start_page)`` -- the caller can hand it to the user and, in a
+    later call, pass it back as ``resume_from_path`` (with
+    ``config.start_page = next_start_page``) to continue.
+    """
+
+    output_path: str
+    finished: bool
+    next_start_page: int
+    total_pages: int
 
 
 class _Placement:
@@ -69,7 +89,9 @@ def annotate_pdf(
     report_path: Optional[str] = None,
     progress: bool = True,
     progress_cb: Optional[Callable[[int, int], None]] = None,
-) -> str:
+    resume_from_path: Optional[str] = None,
+    time_budget_seconds: Optional[float] = None,
+) -> AnnotateResult:
     """Annotate ``input_path`` and write the result to ``output_path``.
 
     ``progress_cb``, if given, is called after every page as
@@ -77,7 +99,27 @@ def annotate_pdf(
     caller (e.g. the Gradio webapp) can surface real per-page progress
     instead of appearing to hang on a single big book.
 
-    Returns the output path actually written.
+    ``resume_from_path``, if given, is an already-annotated partial PDF from
+    a previous, time-boxed call (see below) -- its pages are kept as-is and
+    only pages from ``len(resume_from_path's pages)`` onward are (re)built.
+
+    ``time_budget_seconds``, if given, stops the run soon after this many
+    seconds have elapsed (checked once per page, so the actual overrun is at
+    most one page's processing time) instead of running until every page is
+    done. This exists for hosts that periodically restart a long-running
+    process outside the application's control (observed on Render's free
+    tier: roughly every 15-25 minutes, seemingly regardless of code or
+    traffic -- most likely severe CPU-quota throttling causing the
+    platform's own health check to time out). A single request annotating a
+    several-hundred-page book can never reliably finish in one shot on such
+    a host; budgeting well under the observed restart interval and handing
+    back a valid partial PDF plus a precise resume point lets the caller
+    (e.g. the webapp) turn "silently killed with nothing to show" into
+    "download what's done so far, then continue".
+
+    Returns an ``AnnotateResult``. When ``time_budget_seconds`` is ``None``
+    (the default), the run always goes to completion and
+    ``result.finished`` is always ``True``.
     """
     config = config or AnnotationConfig()
     if output_path is None:
@@ -89,13 +131,18 @@ def annotate_pdf(
     renderer = LabelRenderer(config)
 
     src = fitz.open(input_path)
-    out = fitz.open()
+    out = fitz.open(resume_from_path) if resume_from_path else fitz.open()
+    # If resuming, these pages are already fully annotated (they came from a
+    # previous, time-boxed call) -- skip rebuilding them and just append new
+    # ones after them.
+    resume_start = len(out) if resume_from_path else 0
     # Ping-pong temp files derived from output_path so concurrent runs (e.g.
     # multiple webapp requests, each with their own unique output_path) never
     # collide on the same checkpoint file.
     ckpt_paths = [output_path + ".ckpt0.tmp", output_path + ".ckpt1.tmp"]
     ckpt_toggle = 0
     pages_since_checkpoint = 0
+    t_start = time.monotonic()
 
     stats = {
         "input": input_path,
@@ -106,8 +153,13 @@ def annotate_pdf(
         "cefr_level": config.cefr_level.upper(),
     }
 
+    finished = True
+    next_start_page = stats["pages"]
+
     try:
         for pno in range(len(src)):
+            if pno < resume_start:
+                continue
             src_page = src[pno]
             page_doc, annotated = _build_page(
                 src_page, selector, renderer, config, pno
@@ -139,8 +191,18 @@ def annotate_pdf(
             if progress_cb:
                 progress_cb(pno, len(src))
 
-            pages_since_checkpoint += 1
             is_last_page = pno == len(src) - 1
+
+            if (
+                time_budget_seconds is not None
+                and not is_last_page
+                and (time.monotonic() - t_start) >= time_budget_seconds
+            ):
+                finished = False
+                next_start_page = pno + 1
+                break
+
+            pages_since_checkpoint += 1
             if pages_since_checkpoint >= _CHECKPOINT_EVERY_PAGES and not is_last_page:
                 # NOTE: intentionally *not* using ``garbage=4`` here (unlike
                 # the final save below). ``garbage=4`` makes MuPDF do a full
@@ -166,12 +228,18 @@ def annotate_pdf(
                 ckpt_toggle = 1 - ckpt_toggle
                 pages_since_checkpoint = 0
 
-        # Preserve bookmarks / outline.
-        toc = src.get_toc(simple=False)
-        if toc:
-            out.set_toc(toc)
-
-        out.save(output_path, garbage=4, deflate=True)
+        if finished:
+            # Preserve bookmarks / outline.
+            toc = src.get_toc(simple=False)
+            if toc:
+                out.set_toc(toc)
+            out.save(output_path, garbage=4, deflate=True)
+        else:
+            # Partial result: this file will be resumed and re-saved fully
+            # later, so skip the expensive garbage=4 dedup pass (same
+            # reasoning as the periodic checkpoints above) -- just make sure
+            # it is a valid, complete-so-far PDF the user can download now.
+            out.save(output_path, deflate=True)
         out.close()
     finally:
         src.close()
@@ -183,11 +251,23 @@ def annotate_pdf(
         with open(report_path, "w", encoding="utf-8") as fh:
             json.dump(stats, fh, ensure_ascii=False, indent=2)
 
-    print(
-        "Done: %d/%d pages annotated, %d notes -> %s"
-        % (stats["pages_annotated"], stats["pages"], stats["annotations"], output_path)
+    if finished:
+        print(
+            "Done: %d/%d pages annotated, %d notes -> %s"
+            % (stats["pages_annotated"], stats["pages"], stats["annotations"], output_path)
+        )
+    else:
+        print(
+            "Time budget reached: completed pages up to %d/%d -> partial result %s "
+            "(resume from page %d)"
+            % (next_start_page, stats["pages"], output_path, next_start_page + 1)
+        )
+    return AnnotateResult(
+        output_path=output_path,
+        finished=finished,
+        next_start_page=next_start_page,
+        total_pages=stats["pages"],
     )
-    return output_path
 
 
 # --- Parallel, chunked variant -------------------------------------------

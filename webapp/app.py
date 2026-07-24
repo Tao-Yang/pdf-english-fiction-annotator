@@ -21,6 +21,7 @@ import tempfile
 import threading
 import urllib.parse
 
+import fitz  # PyMuPDF
 import gradio as gr
 
 # Make the parent package importable when run as a script.
@@ -44,6 +45,20 @@ from prepare_assets import DB_FILENAME, ensure_ecdict_database  # noqa: E402
 # different.
 ANNOTATOR_MAX_WORKERS = int(os.environ.get("ANNOTATOR_MAX_WORKERS", "4"))
 ANNOTATOR_CHUNK_PAGES = int(os.environ.get("ANNOTATOR_CHUNK_PAGES", "10"))
+
+# Render's free tier has been observed (via its own logs/metrics API) to
+# restart the running process on its own roughly every 15-25 minutes,
+# seemingly regardless of code path, deploys, or traffic -- most likely
+# severe CPU-quota throttling causing the platform's own health check to
+# time out. A single request can therefore never reliably annotate a long
+# book (e.g. 875 pages) in one shot on that host. Budgeting well under the
+# shortest observed interval means a run stops itself cleanly, with a valid
+# partial PDF and a precise resume point, instead of being silently killed
+# with nothing to show for it. Override via env var for hosts without this
+# constraint.
+ANNOTATOR_TIME_BUDGET_SECONDS = int(
+    os.environ.get("ANNOTATOR_TIME_BUDGET_SECONDS", "480")
+)
 
 # A writable directory for the cached dictionary. HF Spaces / most PaaS allow
 # writing under the app dir or /tmp.
@@ -603,7 +618,7 @@ def _ensure_assets(progress=None) -> None:
         _READY = True
 
 
-def annotate(pdf_file, dictionary, start_page, progress=gr.Progress()):
+def annotate(pdf_file, dictionary, start_page, resume_pdf, progress=gr.Progress()):
     if pdf_file is None:
         raise gr.Error("请先上传一个英文 PDF 文件。")
 
@@ -623,7 +638,18 @@ def annotate(pdf_file, dictionary, start_page, progress=gr.Progress()):
         ecdict_path=ECDICT_PATH,
         historical_glossary_path=HISTORICAL_GLOSSARY_PATH,
     )
-    if start_page is not None and str(start_page).strip() != "":
+
+    # Resuming a previous, time-boxed run: the uploaded "续传" file already
+    # has its first N pages fully annotated, so pick up exactly where it
+    # left off. This overrides the manual start-page field -- the user only
+    # needs to re-upload last run's partial download and click the button
+    # again, no page counting required.
+    resume_from_path = None
+    if resume_pdf is not None:
+        resume_from_path = resume_pdf if isinstance(resume_pdf, str) else resume_pdf.name
+        with fitz.open(resume_from_path) as _rf:
+            config.start_page = len(_rf)
+    elif start_page is not None and str(start_page).strip() != "":
         try:
             # UI value is a 1-based page number; config.start_page is 0-based.
             config.start_page = max(0, int(start_page) - 1)
@@ -657,17 +683,37 @@ def annotate(pdf_file, dictionary, start_page, progress=gr.Progress()):
         # constrained host, bound the actual native leak in-process: no
         # extra worker processes, no redundant module re-execution, no
         # multiprocessing startup cost at all.
-        written = annotate_pdf(
+        #
+        # ``time_budget_seconds`` bounds a single request to well under
+        # Render's observed ~15-25 minute self-restart interval (see the
+        # module-level comment on ANNOTATOR_TIME_BUDGET_SECONDS), so a long
+        # book that can't finish in one shot still yields a valid partial
+        # download plus a precise resume point instead of being silently
+        # killed with nothing to show.
+        result = annotate_pdf(
             input_path=src_path,
             output_path=out_path,
             config=config,
             progress=False,
             progress_cb=_on_page,
+            resume_from_path=resume_from_path,
+            time_budget_seconds=ANNOTATOR_TIME_BUDGET_SECONDS,
         )
     except Exception as exc:
         raise gr.Error("注释失败：%s" % exc) from exc
-    progress(1.0, desc="完成")
-    return written
+
+    if result.finished:
+        progress(1.0, desc="完成")
+        return result.output_path, "✅ 已完成全部 %d 页。" % result.total_pages
+
+    progress(1.0, desc="本次时间已用完，已保存部分结果")
+    status = (
+        "⏸️ 处理时间较长，本次只完成到第 %d / %d 页（已保存）。\n\n"
+        "**继续注释：** 下载下面的文件，然后把它上传到左侧「续传」框中，"
+        "无需修改起始页，再次点击「开始注释」即可自动从第 %d 页继续。"
+        % (result.next_start_page, result.total_pages, result.next_start_page + 1)
+    )
+    return result.output_path, status
 
 
 
@@ -706,12 +752,23 @@ def _build_demo() -> gr.Blocks:
                     value=None,
                     precision=0,
                 )
+                resume_pdf_in = gr.File(
+                    label="续传：上次的部分注释文件（可选）",
+                    file_types=[".pdf"],
+                    type="filepath",
+                    elem_id="resume-in",
+                )
                 run = gr.Button("开 始 注 释", variant="primary", elem_id="run-btn")
             with gr.Column(scale=1, elem_classes=["paper-card"]):
                 gr.HTML("<div class='card-title'>取 回 译 注</div>")
                 pdf_out = gr.File(label="下载带注释的 PDF", elem_id="pdf-out")
+                status_md = gr.Markdown()
 
-        run.click(annotate, inputs=[pdf_in, dictionaries, start_page], outputs=pdf_out)
+        run.click(
+            annotate,
+            inputs=[pdf_in, dictionaries, start_page, resume_pdf_in],
+            outputs=[pdf_out, status_md],
+        )
 
         gr.HTML(FOOTER_HTML)
         demo.load(None, None, None, js=TOOLTIP_JS)
