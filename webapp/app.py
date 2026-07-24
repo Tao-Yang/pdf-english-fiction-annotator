@@ -678,39 +678,54 @@ def annotate(pdf_file, dictionary, start_page, progress=gr.Progress()):
     return written
 
 
-with gr.Blocks(title="伴读 · 英文原著中文注释", theme=THEME, css=CUSTOM_CSS) as demo:
-    gr.HTML(HEADER_HTML)
-    dictionaries = gr.Radio(
-        choices=DICTIONARY_CHOICES,
-        value=DEFAULT_DICTIONARY,
-        show_label=False,
-        container=False,
-        elem_id="dict-picker",
-    )
-    with gr.Row(equal_height=True):
-        with gr.Column(scale=1, elem_classes=["paper-card"]):
-            gr.HTML("<div class='card-title'>上 传 原 著</div>")
-            pdf_in = gr.File(
-                label="英文 PDF", file_types=[".pdf"], type="filepath",
-                elem_id="pdf-in",
-            )
-            start_page = gr.Number(
-                label="正文起始页（可选）",
-                info="从第几页开始注释（1 = 第一页）。留空则从第一页开始，可填大一点以跳过前置页",
-                value=None,
-                precision=0,
-            )
-            run = gr.Button("开 始 注 释", variant="primary", elem_id="run-btn")
-        with gr.Column(scale=1, elem_classes=["paper-card"]):
-            gr.HTML("<div class='card-title'>取 回 译 注</div>")
-            pdf_out = gr.File(label="下载带注释的 PDF", elem_id="pdf-out")
+def _build_demo() -> gr.Blocks:
+    # Built lazily, only for the actual server process (see __main__ guard
+    # below) -- never at plain import time. ``annotate_pdf_parallel`` uses
+    # multiprocessing's "spawn" start method, which re-executes this entire
+    # script's top-level code inside every worker process (that's what the
+    # ``if __name__ == "__main__":`` guard convention protects against).
+    # Building the full Blocks UI (many components, custom CSS/JS, HTML
+    # strings) is pure wasted work for a worker -- it never serves the UI --
+    # and on a CPU-constrained host (e.g. Render's free tier) it can add a
+    # substantial, multi-second-to-minutes delay to every worker startup,
+    # which looks to the user like the progress bar freezing before the
+    # first chunk ever completes. Keeping this inside a function that's only
+    # called under the __main__ guard means workers skip it entirely.
+    with gr.Blocks(title="伴读 · 英文原著中文注释", theme=THEME, css=CUSTOM_CSS) as demo:
+        gr.HTML(HEADER_HTML)
+        dictionaries = gr.Radio(
+            choices=DICTIONARY_CHOICES,
+            value=DEFAULT_DICTIONARY,
+            show_label=False,
+            container=False,
+            elem_id="dict-picker",
+        )
+        with gr.Row(equal_height=True):
+            with gr.Column(scale=1, elem_classes=["paper-card"]):
+                gr.HTML("<div class='card-title'>上 传 原 著</div>")
+                pdf_in = gr.File(
+                    label="英文 PDF", file_types=[".pdf"], type="filepath",
+                    elem_id="pdf-in",
+                )
+                start_page = gr.Number(
+                    label="正文起始页（可选）",
+                    info="从第几页开始注释（1 = 第一页）。留空则从第一页开始，可填大一点以跳过前置页",
+                    value=None,
+                    precision=0,
+                )
+                run = gr.Button("开 始 注 释", variant="primary", elem_id="run-btn")
+            with gr.Column(scale=1, elem_classes=["paper-card"]):
+                gr.HTML("<div class='card-title'>取 回 译 注</div>")
+                pdf_out = gr.File(label="下载带注释的 PDF", elem_id="pdf-out")
 
-    run.click(annotate, inputs=[pdf_in, dictionaries, start_page], outputs=pdf_out)
+        run.click(annotate, inputs=[pdf_in, dictionaries, start_page], outputs=pdf_out)
 
-    gr.HTML(FOOTER_HTML)
-    demo.load(None, None, None, js=TOOLTIP_JS)
+        gr.HTML(FOOTER_HTML)
+        demo.load(None, None, None, js=TOOLTIP_JS)
+    return demo
 
 
 if __name__ == "__main__":
+    demo = _build_demo()
     port = int(os.environ.get("PORT", 7860))
     demo.queue().launch(server_name="0.0.0.0", server_port=port)
