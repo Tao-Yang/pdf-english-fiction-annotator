@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from annotator.config import AnnotationConfig  # noqa: E402
 from annotator.nltk_setup import ensure_nltk_data  # noqa: E402
-from annotator.pipeline import annotate_pdf, annotate_pdf_parallel  # noqa: E402
+from annotator.pipeline import annotate_pdf_parallel  # noqa: E402
 from prepare_assets import DB_FILENAME, ensure_ecdict_database  # noqa: E402
 
 # Optional chunked/concurrent annotation. Splitting the book into small
@@ -644,23 +644,34 @@ def annotate(pdf_file, dictionary, start_page, progress=gr.Progress()):
         progress(frac, desc="正在生成注释：第 %d / %d 页…" % (pno + 1, total))
 
     try:
-        if ANNOTATOR_MAX_WORKERS > 1:
-            written = annotate_pdf_parallel(
-                input_path=src_path,
-                output_path=out_path,
-                config=config,
-                progress_cb=_on_page,
-                chunk_pages=ANNOTATOR_CHUNK_PAGES,
-                max_workers=ANNOTATOR_MAX_WORKERS,
-            )
-        else:
-            written = annotate_pdf(
-                input_path=src_path,
-                output_path=out_path,
-                config=config,
-                progress=False,
-                progress_cb=_on_page,
-            )
+        # Always route through the chunked/worker-process pipeline, even
+        # when ANNOTATOR_MAX_WORKERS=1 (the configured value on Render's
+        # free tier). This is NOT just about parallel speedup: the
+        # single-process sequential path (``annotate_pdf``) has no
+        # mechanism to bound native (C-level) state that PyMuPDF/MuPDF
+        # leaks across many repeated fitz.open()/close() cycles -- font/
+        # colorspace caches and similar internals are not fully released
+        # by Document.close(). On a long book, that leak compounds over
+        # hundreds of pages in a single long-running process until it
+        # becomes slow enough to look like a permanent hang. Confirmed in
+        # practice on the real 875-page target book: after the checkpoint-
+        # save fix resolved the earlier ~80-page-interval freezes, the
+        # sequential path went on to hang again at page ~832 (not a
+        # checkpoint boundary) with the exact same "reproducibly slow,
+        # never at a fixed page count, always deep into a long run"
+        # signature as this native-leak class of bug. ``annotate_pdf_parallel``
+        # already mitigates exactly this via ``max_tasks_per_child=20``,
+        # which periodically restarts the worker process (even with a pool
+        # of size 1) to release accumulated native state -- so it stays
+        # healthy for arbitrarily long books regardless of worker count.
+        written = annotate_pdf_parallel(
+            input_path=src_path,
+            output_path=out_path,
+            config=config,
+            progress_cb=_on_page,
+            chunk_pages=ANNOTATOR_CHUNK_PAGES,
+            max_workers=max(1, ANNOTATOR_MAX_WORKERS),
+        )
     except Exception as exc:
         raise gr.Error("注释失败：%s" % exc) from exc
     progress(1.0, desc="完成")
