@@ -22,6 +22,7 @@ import sys
 import tempfile
 import threading
 import urllib.parse
+import zipfile
 
 import fitz  # PyMuPDF
 import gradio as gr
@@ -32,7 +33,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from annotator.config import AnnotationConfig  # noqa: E402
 from annotator.nltk_setup import ensure_nltk_data  # noqa: E402
 from annotator.pipeline import annotate_pdf  # noqa: E402
+from annotator.split_merge import merge_pdfs, split_pdf  # noqa: E402
 from prepare_assets import DB_FILENAME, ensure_ecdict_database  # noqa: E402
+
+# Books at or under this size have been reliably observed to annotate
+# end-to-end in a single request on Render's free tier. Longer books should
+# be split (see split_pdf_ui/merge_pdfs_ui below) into parts at or under this
+# size, annotated separately, then merged back together -- this sidesteps
+# both the RAM ceiling and the platform's CPU-throttling-triggered restarts,
+# since each part gets its own short-lived request/process instead of one
+# long-lived one accumulating memory/CPU debt over the whole book.
+SPLIT_DEFAULT_MAX_PAGES = int(os.environ.get("ANNOTATOR_SPLIT_MAX_PAGES", "500"))
 
 # Optional chunked/concurrent annotation. Splitting the book into small
 # page-range chunks bounds each worker's memory to a few pages instead of
@@ -775,6 +786,56 @@ def annotate(pdf_file, dictionary, start_page, resume_pdf, progress=gr.Progress(
     yield result.output_path, status
 
 
+def split_pdf_ui(pdf_file, max_pages):
+    if pdf_file is None:
+        raise gr.Error("请先上传一个 PDF 文件。")
+    try:
+        max_pages = int(max_pages)
+    except (TypeError, ValueError):
+        max_pages = 0
+    if max_pages <= 0:
+        raise gr.Error("请填写每份最多页数（正整数）。")
+
+    src_path = pdf_file if isinstance(pdf_file, str) else pdf_file.name
+    out_dir = tempfile.mkdtemp(prefix="split-")
+    parts = split_pdf(src_path, max_pages, out_dir)
+
+    zip_path = os.path.join(out_dir, "拆分结果.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for part_path in parts:
+            zf.write(part_path, arcname=os.path.basename(part_path))
+
+    names = "\n".join("- %s" % os.path.basename(p) for p in parts)
+    status = (
+        "✅ 已拆分为 %d 份，每份最多 %d 页：\n\n%s\n\n"
+        "下载并解压上面的 zip，把每一份分别上传到「📖 标注」页签注释、下载注释结果，"
+        "最后把所有注释好的文件一起上传到「🔗 合并结果」页签合并成一个完整文件。"
+        % (len(parts), max_pages, names)
+    )
+    return zip_path, status
+
+
+def merge_pdfs_ui(pdf_files):
+    if not pdf_files:
+        raise gr.Error("请先上传要合并的已注释 PDF 文件（可多选）。")
+    paths = [f if isinstance(f, str) else f.name for f in pdf_files]
+    # Uploaded file order is not guaranteed to match part order, but the
+    # split step names parts "..._part01.pdf", "..._part02.pdf", ... so
+    # sorting by filename recovers the correct order as long as the user
+    # doesn't rename the files.
+    paths.sort(key=lambda p: os.path.basename(p))
+
+    out_dir = tempfile.mkdtemp(prefix="merged-")
+    out_path = os.path.join(out_dir, "合并结果.pdf")
+    merge_pdfs(paths, out_path)
+
+    order = "\n".join("%d. %s" % (i + 1, os.path.basename(p)) for i, p in enumerate(paths))
+    status = "✅ 已按文件名顺序合并 %d 个文件：\n\n%s\n\n如顺序不对，请重命名文件（如 part01, part02 ...）后重新上传。" % (
+        len(paths),
+        order,
+    )
+    return out_path, status
+
 
 def _build_demo() -> gr.Blocks:
     # Built lazily, only for the actual server process (see __main__ guard
@@ -791,43 +852,96 @@ def _build_demo() -> gr.Blocks:
     # called under the __main__ guard means workers skip it entirely.
     with gr.Blocks(title="伴读 · 英文原著中文注释", theme=THEME, css=CUSTOM_CSS) as demo:
         gr.HTML(HEADER_HTML)
-        dictionaries = gr.Radio(
-            choices=DICTIONARY_CHOICES,
-            value=DEFAULT_DICTIONARY,
-            show_label=False,
-            container=False,
-            elem_id="dict-picker",
-        )
-        with gr.Row(equal_height=True):
-            with gr.Column(scale=1, elem_classes=["paper-card"]):
-                gr.HTML("<div class='card-title'>上 传 原 著</div>")
-                pdf_in = gr.File(
-                    label="英文 PDF", file_types=[".pdf"], type="filepath",
-                    elem_id="pdf-in",
+        with gr.Tabs():
+            with gr.Tab("📖 标注"):
+                dictionaries = gr.Radio(
+                    choices=DICTIONARY_CHOICES,
+                    value=DEFAULT_DICTIONARY,
+                    show_label=False,
+                    container=False,
+                    elem_id="dict-picker",
                 )
-                start_page = gr.Number(
-                    label="正文起始页（可选）",
-                    info="从第几页开始注释（1 = 第一页）。留空则从第一页开始，可填大一点以跳过前置页",
-                    value=None,
-                    precision=0,
-                )
-                resume_pdf_in = gr.File(
-                    label="续传：上次的部分注释文件（可选）",
-                    file_types=[".pdf"],
-                    type="filepath",
-                    elem_id="resume-in",
-                )
-                run = gr.Button("开 始 注 释", variant="primary", elem_id="run-btn")
-            with gr.Column(scale=1, elem_classes=["paper-card"]):
-                gr.HTML("<div class='card-title'>取 回 译 注</div>")
-                pdf_out = gr.File(label="下载带注释的 PDF", elem_id="pdf-out")
-                status_md = gr.Markdown()
+                with gr.Row(equal_height=True):
+                    with gr.Column(scale=1, elem_classes=["paper-card"]):
+                        gr.HTML("<div class='card-title'>上 传 原 著</div>")
+                        gr.Markdown(
+                            "超过 %d 页的大部头建议先在「✂️ 拆分大文件」页签拆分、"
+                            "分别注释后再到「🔗 合并结果」页签合并，避免单次处理时间过长。"
+                            % SPLIT_DEFAULT_MAX_PAGES
+                        )
+                        pdf_in = gr.File(
+                            label="英文 PDF", file_types=[".pdf"], type="filepath",
+                            elem_id="pdf-in",
+                        )
+                        start_page = gr.Number(
+                            label="正文起始页（可选）",
+                            info="从第几页开始注释（1 = 第一页）。留空则从第一页开始，可填大一点以跳过前置页",
+                            value=None,
+                            precision=0,
+                        )
+                        resume_pdf_in = gr.File(
+                            label="续传：上次的部分注释文件（可选）",
+                            file_types=[".pdf"],
+                            type="filepath",
+                            elem_id="resume-in",
+                        )
+                        run = gr.Button("开 始 注 释", variant="primary", elem_id="run-btn")
+                    with gr.Column(scale=1, elem_classes=["paper-card"]):
+                        gr.HTML("<div class='card-title'>取 回 译 注</div>")
+                        pdf_out = gr.File(label="下载带注释的 PDF", elem_id="pdf-out")
+                        status_md = gr.Markdown()
 
-        run.click(
-            annotate,
-            inputs=[pdf_in, dictionaries, start_page, resume_pdf_in],
-            outputs=[pdf_out, status_md],
-        )
+                run.click(
+                    annotate,
+                    inputs=[pdf_in, dictionaries, start_page, resume_pdf_in],
+                    outputs=[pdf_out, status_md],
+                )
+
+            with gr.Tab("✂️ 拆分大文件"):
+                with gr.Row(equal_height=True):
+                    with gr.Column(scale=1, elem_classes=["paper-card"]):
+                        gr.HTML("<div class='card-title'>上 传 大 部 头</div>")
+                        split_pdf_in = gr.File(
+                            label="英文 PDF", file_types=[".pdf"], type="filepath",
+                        )
+                        split_max_pages = gr.Number(
+                            label="每份最多页数",
+                            value=SPLIT_DEFAULT_MAX_PAGES,
+                            precision=0,
+                        )
+                        split_btn = gr.Button("拆 分", variant="primary")
+                    with gr.Column(scale=1, elem_classes=["paper-card"]):
+                        gr.HTML("<div class='card-title'>取 回 分 卷</div>")
+                        split_zip_out = gr.File(label="下载拆分后的 zip")
+                        split_status_md = gr.Markdown()
+
+                split_btn.click(
+                    split_pdf_ui,
+                    inputs=[split_pdf_in, split_max_pages],
+                    outputs=[split_zip_out, split_status_md],
+                )
+
+            with gr.Tab("🔗 合并结果"):
+                with gr.Row(equal_height=True):
+                    with gr.Column(scale=1, elem_classes=["paper-card"]):
+                        gr.HTML("<div class='card-title'>上 传 各 分 卷 注 释 结 果</div>")
+                        merge_pdfs_in = gr.File(
+                            label="已注释的 PDF（可多选，按文件名顺序合并）",
+                            file_types=[".pdf"],
+                            type="filepath",
+                            file_count="multiple",
+                        )
+                        merge_btn = gr.Button("合 并", variant="primary")
+                    with gr.Column(scale=1, elem_classes=["paper-card"]):
+                        gr.HTML("<div class='card-title'>取 回 完 整 译 本</div>")
+                        merge_pdf_out = gr.File(label="下载合并后的 PDF")
+                        merge_status_md = gr.Markdown()
+
+                merge_btn.click(
+                    merge_pdfs_ui,
+                    inputs=[merge_pdfs_in],
+                    outputs=[merge_pdf_out, merge_status_md],
+                )
 
         gr.HTML(FOOTER_HTML)
         demo.load(None, None, None, js=TOOLTIP_JS)

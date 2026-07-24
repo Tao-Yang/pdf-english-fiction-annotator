@@ -27,6 +27,13 @@ output/
 # NLTK data cache
 nltk_data/
 
+# Local build/test caches and ad-hoc script artifacts (screenshots, logs,
+# downloaded test fixtures) - never meant to be committed.
+.cache/
+render_*.txt
+render_*.png
+scripts/_resume_downloads/
+
 # OS / editor
 .DS_Store
 Thumbs.db
