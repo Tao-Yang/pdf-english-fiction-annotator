@@ -93,6 +93,41 @@ def build_parser() -> argparse.ArgumentParser:
         default=10,
         help="Pages per chunk when --workers > 1 (default: 10).",
     )
+    parser.add_argument(
+        "--literary-translation",
+        action="store_true",
+        help="Enable the optional 'master translator' mode: long sentences "
+        "and poem/verse quotations additionally get a full literary "
+        "translation (Fu Donghua / Zhu Shenghao / Xu Yuanchong / Yu "
+        "Guangzhong style, auto-selected) via the Claude API. Requires "
+        "network access and an ANTHROPIC_API_KEY (or --anthropic-api-key).",
+    )
+    parser.add_argument(
+        "--anthropic-api-key",
+        default=None,
+        help="Anthropic API key for --literary-translation (default: the "
+        "ANTHROPIC_API_KEY environment variable).",
+    )
+    parser.add_argument(
+        "--literary-long-sentence-words",
+        type=int,
+        default=None,
+        help="Minimum word count for a prose sentence to qualify for full "
+        "literary translation (default: 35).",
+    )
+    parser.add_argument(
+        "--literary-max-per-page",
+        type=int,
+        default=None,
+        help="Max literary translations requested per page (default: 1).",
+    )
+    parser.add_argument(
+        "--literary-max-total",
+        type=int,
+        default=None,
+        help="Max literary translations requested across the whole run "
+        "(default: 40).",
+    )
     return parser
 
 
@@ -114,6 +149,16 @@ def main(argv=None) -> int:
         config.margin_width = args.margin_width
     if args.font is not None:
         config.font_path = args.font
+    if args.literary_translation:
+        config.enable_literary_translation = True
+    if args.anthropic_api_key is not None:
+        config.literary_translator_api_key = args.anthropic_api_key
+    if args.literary_long_sentence_words is not None:
+        config.literary_long_sentence_words = args.literary_long_sentence_words
+    if args.literary_max_per_page is not None:
+        config.literary_max_per_page = args.literary_max_per_page
+    if args.literary_max_total is not None:
+        config.literary_max_total = args.literary_max_total
 
     print("Preparing NLTK data ...")
     ensure_nltk_data()

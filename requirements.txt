@@ -2,3 +2,6 @@ PyMuPDF>=1.21.1
 wordfreq>=3.0.3
 nltk>=3.8.1
 Pillow>=9.5.0
+# Optional: only imported when AnnotationConfig.enable_literary_translation
+# is turned on (long-sentence/poem "master translator" mode).
+anthropic>=0.40.0

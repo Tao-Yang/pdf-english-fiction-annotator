@@ -33,6 +33,12 @@ import fitz  # PyMuPDF
 
 from .config import AnnotationConfig
 from .dictionary import Dictionary
+from .literary_translation import (
+    LiteraryPassage,
+    LiteraryTranslator,
+    TRANSLATOR_STYLES,
+    detect_passages,
+)
 from .renderer import LabelRenderer
 from .selector import Selected, WordSelector
 
@@ -56,12 +62,26 @@ class AnnotateResult:
 
 
 class _Placement:
-    __slots__ = ("selected", "word_rect", "png")
+    """A single margin annotation ready to draw: an ordinary one-line word
+    gloss, or (when ``height``/``accent_rgb`` are given) a taller literary-
+    translation block. ``selected`` is ``None`` for the latter.
+    """
 
-    def __init__(self, selected: Selected, word_rect: fitz.Rect, png: bytes) -> None:
+    __slots__ = ("selected", "word_rect", "png", "height", "accent_rgb")
+
+    def __init__(
+        self,
+        selected: Optional[Selected],
+        word_rect: fitz.Rect,
+        png: bytes,
+        height: Optional[float] = None,
+        accent_rgb: Optional[Tuple[float, float, float]] = None,
+    ) -> None:
         self.selected = selected
         self.word_rect = word_rect
         self.png = png
+        self.height = height
+        self.accent_rgb = accent_rgb
 
 
 # How many pages to accumulate in memory before flushing the in-progress
@@ -157,6 +177,13 @@ def annotate_pdf(
     dictionary = Dictionary(config.ecdict_path, config.historical_glossary_path)
     selector = WordSelector(config, dictionary)
     renderer = LabelRenderer(config)
+    # Optional "master translator" mode (see annotator.literary_translation):
+    # off unless explicitly enabled, and a no-op if it can't reach the API
+    # (missing key / network failure) -- never blocks the ordinary
+    # word-gloss pipeline.
+    literary_translator = (
+        LiteraryTranslator(config) if config.enable_literary_translation else None
+    )
 
     src = fitz.open(input_path)
     out = fitz.open(resume_from_path) if resume_from_path else fitz.open()
@@ -212,7 +239,8 @@ def annotate_pdf(
                 continue
             src_page = src[pno]
             page_doc, annotated = _build_page(
-                src_page, selector, renderer, config, pno
+                src_page, selector, renderer, config, pno,
+                literary_translator=literary_translator,
             )
             # Import the finished page into the output document.
             out.insert_pdf(page_doc, from_page=0, to_page=0)
@@ -320,6 +348,11 @@ def annotate_pdf(
             if os.path.exists(ckpt_path):
                 os.remove(ckpt_path)
 
+    if literary_translator is not None:
+        stats["literary_translations"] = (
+            config.literary_max_total - literary_translator.remaining
+        )
+
     if report_path:
         with open(report_path, "w", encoding="utf-8") as fh:
             json.dump(stats, fh, ensure_ascii=False, indent=2)
@@ -367,6 +400,7 @@ def annotate_pdf(
 _worker_config: Optional[AnnotationConfig] = None
 _worker_selector: Optional[WordSelector] = None
 _worker_renderer: Optional[LabelRenderer] = None
+_worker_literary_translator: Optional[LiteraryTranslator] = None
 
 
 def _init_worker(config: AnnotationConfig) -> None:
@@ -390,11 +424,21 @@ def _init_worker(config: AnnotationConfig) -> None:
     worker, which is why ``_safe_max_workers`` below budgets for the full
     per-worker cost rather than assuming any sharing.
     """
-    global _worker_config, _worker_selector, _worker_renderer
+    global _worker_config, _worker_selector, _worker_renderer, _worker_literary_translator
     _worker_config = config
     dictionary = Dictionary(config.ecdict_path, config.historical_glossary_path)
     _worker_selector = WordSelector(config, dictionary)
     _worker_renderer = LabelRenderer(config)
+    # Each worker process gets its own independent translation budget (see
+    # ``config.literary_max_total``) -- with several concurrent workers the
+    # effective run-wide cap is therefore an approximation (roughly
+    # ``literary_max_total`` per worker, not per run), which is an
+    # acceptable trade-off for an optional, opt-in enhancement given that
+    # ``ProcessPoolExecutor`` workers don't share Python state to coordinate
+    # a single global counter.
+    _worker_literary_translator = (
+        LiteraryTranslator(config) if config.enable_literary_translation else None
+    )
 
 
 # --- Memory-aware worker cap ---------------------------------------------
@@ -526,6 +570,7 @@ def _annotate_chunk(
     config = _worker_config
     selector = _worker_selector
     renderer = _worker_renderer
+    literary_translator = _worker_literary_translator
 
     src = fitz.open(input_path)
     out = fitz.open()
@@ -533,7 +578,10 @@ def _annotate_chunk(
     annotations = 0
     try:
         for pno in range(page_start, page_end):
-            page_doc, annotated = _build_page(src[pno], selector, renderer, config, pno)
+            page_doc, annotated = _build_page(
+                src[pno], selector, renderer, config, pno,
+                literary_translator=literary_translator,
+            )
             out.insert_pdf(page_doc, from_page=0, to_page=0)
             page_doc.close()
             # See the matching comment in annotate_pdf(): bound MuPDF's
@@ -715,6 +763,7 @@ def _build_page(
     renderer: LabelRenderer,
     config: AnnotationConfig,
     pno: int,
+    literary_translator: Optional[LiteraryTranslator] = None,
 ) -> Tuple[fitz.Document, int]:
     """Return a single-page document containing the widened, annotated page.
 
@@ -744,13 +793,25 @@ def _build_page(
 
     text = src_page.get_text("text")
     selections = selector.select_from_text(text)
-    if not selections:
-        return tmp, 0
+    placements: List[_Placement] = []
+    if selections:
+        placements.extend(_locate(src_page, selections, renderer, config))
 
-    placements = _locate(src_page, selections, renderer, config)
+    if literary_translator is not None and config.enable_literary_translation:
+        passages = detect_passages(text, config)
+        if passages:
+            placements.extend(
+                _locate_literary(
+                    src_page, passages, literary_translator, renderer, config
+                )
+            )
+
     if not placements:
         return tmp, 0
 
+    # Top-down order for stable collision avoidance across both word glosses
+    # and (taller) literary-translation blocks.
+    placements.sort(key=lambda p: p.word_rect.y0)
     _draw(page, placements, config, src_rect.width)
     return tmp, len(placements)
 
@@ -771,6 +832,54 @@ def _locate(
         placements.append(_Placement(sel, rect, png))
     # Top-down order for stable collision avoidance.
     placements.sort(key=lambda p: p.word_rect.y0)
+    return placements
+
+
+def _locate_literary(
+    src_page: fitz.Page,
+    passages: List[LiteraryPassage],
+    translator: LiteraryTranslator,
+    renderer: LabelRenderer,
+    config: AnnotationConfig,
+) -> List[_Placement]:
+    """Translate and lay out detected long-sentence/poem passages.
+
+    Bounded by ``config.literary_max_per_page`` (this page) and the
+    translator's own remaining run-wide budget
+    (``config.literary_max_total``). Any passage that can't be located on
+    the page, or fails to translate, is silently skipped -- this is an
+    additive enhancement, never a hard requirement.
+    """
+    placements: List[_Placement] = []
+    used = 0
+    for passage in passages:
+        if used >= config.literary_max_per_page or translator.remaining <= 0:
+            break
+        rect = _search(src_page, passage.anchor_head)
+        if rect is None:
+            continue
+        translation = translator.translate(passage)
+        if not translation:
+            continue
+        header = "\u3010%s\u8bd1\u3011" % TRANSLATOR_STYLES[passage.translator_key]["label"]
+        label_w = config.margin_width - 8
+        height = max(
+            config.label_height, renderer.measure_block(header, translation, label_w)
+        )
+        png = renderer.render_block(
+            header,
+            translation,
+            label_w,
+            height,
+            config.literary_accent_hex,
+            config.literary_box_hex,
+        )
+        placements.append(
+            _Placement(
+                None, rect, png, height=height, accent_rgb=config.literary_accent_rgb_pdf
+            )
+        )
+        used += 1
     return placements
 
 
@@ -797,29 +906,33 @@ def _draw(
     config: AnnotationConfig,
     content_width: float,
 ) -> None:
-    green = config.green_rgb_pdf
     margin_x = content_width + 4
     label_w = config.margin_width - 8
     last_bottom = -1e9
 
     for p in placements:
         rect = p.word_rect
-        # Green underline under the source word.
+        # Word glosses use the green scheme; literary-translation blocks
+        # (``p.accent_rgb`` set) use the distinct burgundy accent so the two
+        # annotation kinds are visually distinguishable at a glance.
+        color = p.accent_rgb or config.green_rgb_pdf
+        height = p.height or config.label_height
+        # Underline under the source word/anchor.
         y = rect.y1 + 0.5
         page.draw_line(
             fitz.Point(rect.x0, y),
             fitz.Point(rect.x1, y),
-            color=green,
+            color=color,
             width=config.underline_width,
         )
 
         # Vertical position for the label: aligned to the word, pushed down to
         # avoid overlapping the previous label.
         top = max(rect.y0, last_bottom + config.label_gap)
-        bottom = top + config.label_height
+        bottom = top + height
         if bottom > page.rect.height - 4:
             bottom = page.rect.height - 4
-            top = bottom - config.label_height
+            top = bottom - height
         last_bottom = bottom
 
         box = fitz.Rect(margin_x, top, margin_x + label_w, bottom)
@@ -827,7 +940,7 @@ def _draw(
         # Restore the visual leader used by the original annotated edition.
         # A short elbow leaves the underline, then points to the vertical
         # centre of the margin label. Draw it before the PNG so its endpoint
-        # tucks neatly underneath the label's green edge marker.
+        # tucks neatly underneath the label's edge marker.
         label_y = (top + bottom) / 2.0
         elbow_x = min(content_width - 2, max(rect.x1 + 4, content_width - 18))
         page.draw_polyline(
@@ -837,7 +950,7 @@ def _draw(
                 fitz.Point(content_width + 2, label_y),
                 fitz.Point(margin_x + 1, label_y),
             ],
-            color=green,
+            color=color,
             width=config.leader_line_width,
             dashes="[2 2] 0",
             lineCap=1,

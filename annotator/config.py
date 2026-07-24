@@ -139,6 +139,41 @@ class AnnotationConfig:
     # supports multi-word phrases (e.g. "grand secretary", "West Lake").
     historical_glossary_path: str = field(default="data/glossaries")
 
+    # --- Literary "master translator" mode (optional) -----------------------
+    # When enabled, long/complex prose sentences and poem/verse quotations
+    # embedded in the novel are additionally sent to the Claude API for a
+    # full literary translation into Chinese, rendered in the style of one
+    # of four celebrated 20th-century translators (see
+    # ``annotator.literary_translation.TRANSLATOR_STYLES``), shown as a
+    # block annotation alongside the ordinary per-word glosses. Off by
+    # default: it requires network access, an Anthropic API key, and
+    # materially slows down annotation, so it must be an explicit opt-in.
+    enable_literary_translation: bool = False
+    # A sentence (outside a detected poem block) must have at least this
+    # many words to be considered "long" enough to warrant a full-sentence
+    # translation instead of only per-word glosses.
+    literary_long_sentence_words: int = 35
+    # Safety caps on API usage / added latency: at most this many long-
+    # sentence/poem translations are requested per page ...
+    literary_max_per_page: int = 1
+    # ... and at most this many across a single run (a full-length novel can
+    # contain thousands of long sentences; without a hard ceiling that would
+    # mean thousands of blocking network calls).
+    literary_max_total: int = 40
+    # Anthropic model used for literary translation calls.
+    literary_translator_model: str = "claude-opus-4-6"
+    # Explicit API key; if ``None``, falls back to the ``ANTHROPIC_API_KEY``
+    # environment variable. Never hard-code a real key here.
+    literary_translator_api_key: Optional[str] = None
+    # Colour used for the underline/leader/left-edge marker of a literary-
+    # translation block, distinct from the green word-gloss colour so the
+    # two annotation kinds are visually distinguishable at a glance.
+    literary_accent_rgb_pdf: Tuple[float, float, float] = (0.541, 0.200, 0.141)
+    literary_accent_hex: str = "#8a3324"
+    # Pale parchment background for literary-translation blocks (word-gloss
+    # labels use ``box_hex`` instead).
+    literary_box_hex: str = "#fdf1e6"
+
     def zipf_threshold(self) -> float:
         """Return the Zipf frequency cutoff for the configured CEFR level."""
         level = self.cefr_level.upper()

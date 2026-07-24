@@ -633,7 +633,7 @@ def _ensure_assets(progress=None) -> None:
         _READY = True
 
 
-def annotate(pdf_file, dictionary, start_page, progress=gr.Progress()):
+def annotate(pdf_file, dictionary, start_page, literary_translation, progress=gr.Progress()):
     if pdf_file is None:
         raise gr.Error("请先上传一个英文 PDF 文件。")
 
@@ -653,6 +653,16 @@ def annotate(pdf_file, dictionary, start_page, progress=gr.Progress()):
         ecdict_path=ECDICT_PATH,
         historical_glossary_path=HISTORICAL_GLOSSARY_PATH,
     )
+    # Optional "master translator" mode: long sentences / poem quotations
+    # additionally get a full literary translation (Fu Donghua / Zhu
+    # Shenghao / Xu Yuanchong / Yu Guangzhong style, auto-selected by
+    # content) via the Claude API. Uses the server's own ANTHROPIC_API_KEY
+    # env var only -- deliberately no client-supplied API key field in this
+    # public form, to avoid ever handling/echoing a secret through the UI.
+    # If the key isn't configured, the pipeline silently skips this
+    # enhancement and falls back to ordinary word-gloss annotation.
+    if literary_translation:
+        config.enable_literary_translation = True
     if start_page is not None and str(start_page).strip() != "":
         try:
             # UI value is a 1-based page number; config.start_page is 0-based.
@@ -735,12 +745,18 @@ def _build_demo() -> gr.Blocks:
                     value=None,
                     precision=0,
                 )
+                literary_translation = gr.Checkbox(
+                    label="🖋 长句 / 诗歌 名家翻译（试验性，速度较慢）",
+                    info="遇到长句、诗歌等会自动挑选傅东华 / 朱生豪 / 许渊冲 / 余光中风格译出，"
+                    "需服务器已配置 Anthropic API Key，未配置时将自动跳过此功能",
+                    value=False,
+                )
                 run = gr.Button("开 始 注 释", variant="primary", elem_id="run-btn")
             with gr.Column(scale=1, elem_classes=["paper-card"]):
                 gr.HTML("<div class='card-title'>取 回 译 注</div>")
                 pdf_out = gr.File(label="下载带注释的 PDF", elem_id="pdf-out")
 
-        run.click(annotate, inputs=[pdf_in, dictionaries, start_page], outputs=pdf_out)
+        run.click(annotate, inputs=[pdf_in, dictionaries, start_page, literary_translation], outputs=pdf_out)
 
         gr.HTML(FOOTER_HTML)
         demo.load(None, None, None, js=TOOLTIP_JS)
