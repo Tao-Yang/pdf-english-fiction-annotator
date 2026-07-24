@@ -374,59 +374,52 @@ gradio-app {
   max-width: 1500px !important;
   min-width: 720px !important;
   margin: 0 auto !important;
-  padding-bottom: 20px !important;
+  padding-bottom: 6px !important;
 }
 
 /* ---- Header (brush calligraphy) ---- */
-#app-header { text-align: center; padding: 34px 20px 2px; color: #33402c; }
-#app-header .ah-seal {
-  display: inline-block; background: #a5352f; color: #fbe7cf;
-  font-family: "Ma Shan Zheng", "Noto Serif SC", serif;
-  font-size: 22px; letter-spacing: 5px; padding: 7px 15px 4px;
-  border-radius: 9px; transform: rotate(-3deg);
-  box-shadow: 0 4px 12px rgba(120,30,25,0.35); margin-bottom: 4px;
-}
+#app-header { position: relative; text-align: center; padding: 10px 20px 2px; color: #33402c; }
 #app-header h1 {
   font-family: "Ma Shan Zheng", "Noto Serif SC", cursive;
-  font-size: 60px; line-height: 1.15; letter-spacing: 14px;
-  margin: 8px 0 2px; color: #24311d; font-weight: 400;
+  font-size: 42px; line-height: 1.1; letter-spacing: 9px;
+  margin: 2px 0; color: #24311d; font-weight: 400;
   text-shadow: 0 2px 0 rgba(255,255,255,0.5), 0 8px 22px rgba(40,60,30,0.28);
 }
-#app-header .ah-sub {
+#app-header .ah-stamp {
+  position: absolute; top: 4px; right: 18px;
+  writing-mode: vertical-rl; text-orientation: upright;
+  background: #a5352f; color: #fbe7cf;
   font-family: "Ma Shan Zheng", "Noto Serif SC", serif;
-  font-size: 27px; color: #3f5233; margin: 2px 0 10px; letter-spacing: 4px;
-}
-#app-header .ah-desc {
-  max-width: 760px; margin: 8px auto 0; line-height: 1.9;
-  font-size: 22px; letter-spacing: 2px; color: #3f5233; font-weight: 400;
-  font-family: "Ma Shan Zheng", "Noto Serif SC", cursive;
+  font-size: 18px; letter-spacing: 6px; padding: 12px 7px;
+  border-radius: 6px; border: 2px solid rgba(251,231,207,0.55);
+  box-shadow: 0 4px 12px rgba(120,30,25,0.35); transform: rotate(-2deg);
 }
 
 /* ---- Dictionary picker: calligraphy tiles, multi-select ---- */
 #pick-title {
-  text-align: center; margin: 20px 0 10px;
+  text-align: center; margin: 6px 0 4px;
   font-family: "Ma Shan Zheng", "Noto Serif SC", serif;
-  font-size: 30px; letter-spacing: 8px; color: #2e6b45;
+  font-size: 22px; letter-spacing: 6px; color: #2e6b45;
 }
-#dict-picker { margin: 0 auto 4px; border: none !important; background: transparent !important; }
+#dict-picker { margin: 0 auto 2px; border: none !important; background: transparent !important; }
 #dict-picker [data-testid="checkbox-group"],
 #dict-picker [data-testid="radio-group"],
 #dict-picker fieldset, #dict-picker .wrap {
   display: flex !important; flex-wrap: wrap !important;
-  gap: 18px !important; justify-content: center !important;
+  gap: 10px !important; justify-content: center !important;
   border: none !important; background: transparent !important;
   overflow: visible !important;
 }
 #dict-picker label {
   position: relative;
-  flex: 1 1 180px; min-width: 168px; max-width: 260px;
+  flex: 1 1 140px; min-width: 130px; max-width: 200px;
   display: flex !important; align-items: center; justify-content: center;
-  padding: 22px 12px; border-radius: 18px;
+  padding: 10px 8px; border-radius: 14px;
   border: 2px solid rgba(70,90,55,0.30);
   background: rgba(250,250,242,0.86) !important;
   cursor: pointer; transition: all .16s ease;
   font-family: "Ma Shan Zheng", "Noto Serif SC", cursive;
-  font-size: 33px; color: #37472d; letter-spacing: 4px;
+  font-size: 21px; color: #37472d; letter-spacing: 2px;
   box-shadow: 0 6px 16px rgba(50,60,40,0.12);
 }
 #dict-picker label:hover { border-color: #3f7a4e; transform: translateY(-3px); }
@@ -462,31 +455,31 @@ gradio-app {
 .paper-card {
   background: rgba(252,251,244,0.92) !important;
   border: 1px solid rgba(70,90,55,0.22) !important;
-  border-radius: 18px !important;
+  border-radius: 14px !important;
   box-shadow: 0 14px 40px rgba(40,55,30,0.22) !important;
-  padding: 26px !important; min-height: 440px;
+  padding: 14px !important; min-height: 260px;
   backdrop-filter: blur(2px);
 }
 .card-title {
   font-family: "Ma Shan Zheng", "Noto Serif SC", serif;
-  font-size: 27px; color: #2e6b45; letter-spacing: 4px;
-  margin-bottom: 14px; text-align: center;
-  border-bottom: 1px dashed rgba(70,90,55,0.3); padding-bottom: 8px;
+  font-size: 19px; color: #2e6b45; letter-spacing: 3px;
+  margin-bottom: 6px; text-align: center;
+  border-bottom: 1px dashed rgba(70,90,55,0.3); padding-bottom: 4px;
 }
 .paper-card label span { color: #3a4a30 !important; }
 .paper-card input, .paper-card textarea {
   background: rgba(255,254,248,0.96) !important;
 }
 #pdf-in .wrap, #pdf-in .file-preview, #pdf-out .wrap, #pdf-out .file-preview {
-  min-height: 250px !important;
+  min-height: 140px !important;
 }
 
 /* ---- Run button (brush style) ---- */
 #run-btn button, button.primary, .primary {
   background: #3f7a4e !important; border: none !important; color: #fdfbf0 !important;
   font-family: "Ma Shan Zheng", "Noto Serif SC", serif !important;
-  font-size: 23px !important; letter-spacing: 8px; padding: 14px 10px !important;
-  border-radius: 12px !important; font-weight: 400 !important;
+  font-size: 18px !important; letter-spacing: 5px; padding: 9px 8px !important;
+  border-radius: 10px !important; font-weight: 400 !important;
 }
 #run-btn button:hover, button.primary:hover, .primary:hover {
   background: #316040 !important;
@@ -494,8 +487,8 @@ gradio-app {
 
 /* ---- Footer ---- */
 #app-footer {
-  text-align: center; padding: 18px 12px 30px; color: #46583a;
-  font-size: 13px; line-height: 1.95; font-family: "Noto Serif SC", serif;
+  text-align: center; padding: 6px 12px 10px; color: #46583a;
+  font-size: 11px; line-height: 1.5; font-family: "Noto Serif SC", serif;
 }
 #app-footer a {
   color: #2e6b45; text-decoration: none;
@@ -518,8 +511,7 @@ THEME = gr.themes.Soft(
 HEADER_HTML = """
 <div id="app-header">
   <h1>英 文 原 著 伴 读</h1>
-  <p class="ah-sub">你的第一本英文原著，我陪你读完</p>
-  <p class="ah-desc">上传一本英文原著 PDF，系统会在不破坏原有排版的前提下，于页面右侧自然延展开注释区域。它不仅解释生词、短语与习语，更会对书中出现的人物生平、历史官职、地理位置、社会风俗乃至俚语典故进行补充说明。原文始终保持完整阅读体验，目录导航与页码结构均与原书一致。你读到的依然是那本书，只是身边多了一位博学而安静的伴读者。</p>
+  <div class="ah-stamp">你的第一本英文原著我陪你读完</div>
 </div>
 """
 
