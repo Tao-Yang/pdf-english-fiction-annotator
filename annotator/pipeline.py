@@ -81,6 +81,15 @@ class _Placement:
 # interval, since each checkpoint re-compacts the whole accumulated document.
 _CHECKPOINT_EVERY_PAGES = 80
 
+# A resume batch shorter than _CHECKPOINT_EVERY_PAGES (e.g. the last 46 pages
+# of a book) would otherwise never reach a single checkpoint before finishing
+# -- so a mid-flight platform restart during that final short batch silently
+# drops the whole request with nothing delivered, same as if on_checkpoint
+# didn't exist at all (confirmed in practice against the live Render app).
+# Also checkpoint on elapsed wall-clock time since the last checkpoint (or
+# start), whichever comes first, so short trailing batches are covered too.
+_CHECKPOINT_EVERY_SECONDS = 60.0
+
 
 def annotate_pdf(
     input_path: str,
@@ -120,7 +129,10 @@ def annotate_pdf(
 
     ``on_checkpoint``, if given, is called as ``on_checkpoint(ckpt_path, pno,
     total_pages)`` right after every periodic memory-bounding checkpoint save
-    (see ``_CHECKPOINT_EVERY_PAGES``) -- i.e. well before ``time_budget_seconds``
+    (see ``_CHECKPOINT_EVERY_PAGES`` and ``_CHECKPOINT_EVERY_SECONDS`` -- a
+    checkpoint fires on whichever of the two is reached first, so a resume
+    batch shorter than ``_CHECKPOINT_EVERY_PAGES`` still gets at least one)
+    -- i.e. well before ``time_budget_seconds``
     would otherwise return a partial result. This exists because the same
     host that periodically restarts this process outside application control
     (see ``time_budget_seconds`` above) can do so at *any* point, including
@@ -158,6 +170,7 @@ def annotate_pdf(
     ckpt_toggle = 0
     pages_since_checkpoint = 0
     t_start = time.monotonic()
+    t_last_checkpoint = t_start
 
     stats = {
         "input": input_path,
@@ -218,7 +231,11 @@ def annotate_pdf(
                 break
 
             pages_since_checkpoint += 1
-            if pages_since_checkpoint >= _CHECKPOINT_EVERY_PAGES and not is_last_page:
+            should_checkpoint = pages_since_checkpoint >= _CHECKPOINT_EVERY_PAGES or (
+                pages_since_checkpoint > 0
+                and (time.monotonic() - t_last_checkpoint) >= _CHECKPOINT_EVERY_SECONDS
+            )
+            if should_checkpoint and not is_last_page:
                 # NOTE: intentionally *not* using ``garbage=4`` here (unlike
                 # the final save below). ``garbage=4`` makes MuPDF do a full
                 # duplicate-object scan/renumber across the whole document,
@@ -242,6 +259,7 @@ def annotate_pdf(
                 out = fitz.open(ckpt_path)
                 ckpt_toggle = 1 - ckpt_toggle
                 pages_since_checkpoint = 0
+                t_last_checkpoint = time.monotonic()
                 if on_checkpoint:
                     on_checkpoint(ckpt_path, pno, len(src))
 

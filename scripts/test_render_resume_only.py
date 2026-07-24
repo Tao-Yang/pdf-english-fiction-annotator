@@ -8,6 +8,13 @@ Usage:
 import os
 import sys
 import time
+import traceback
+
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 from playwright.sync_api import sync_playwright
 
@@ -25,7 +32,10 @@ def main():
 
     def log(msg):
         line = "[%.1fs] %s" % (time.time() - start, msg)
-        print(line, flush=True)
+        try:
+            print(line, flush=True)
+        except Exception:
+            pass
         with open(log_path, "a", encoding="utf-8") as fh:
             fh.write(line + "\n")
 
@@ -56,6 +66,13 @@ def main():
                         last_seen = "stale"
                 else:
                     return "partial", next_page
+            idx = body.find("已完成到第")
+            if idx >= 0:
+                snippet = body[max(0, idx - 2): idx + 30]
+                if snippet != last_seen:
+                    log("progress (checkpoint): %s" % snippet.replace("\n", " "))
+                    last_seen = snippet
+                continue
             idx = body.find("正在生成注释")
             if idx >= 0:
                 snippet = body[idx: idx + 40]
@@ -101,16 +118,30 @@ def main():
         submit_btn.click()
         log("Clicked submit")
 
-        status, next_page = wait_for_status(page, timeout_s=900, poll_s=10, min_next_page=resume_floor)
+        status, next_page = wait_for_status(page, timeout_s=2400, poll_s=10, min_next_page=resume_floor)
         log("Result: status=%s next_page=%s (floor was %d)" % (status, next_page, resume_floor))
         page.screenshot(path="render_resume_only_result.png")
 
         if status == "done":
             log("SUCCESS: resume continued correctly and finished the whole book.")
+            download_link = page.locator("#pdf-out a").first
+            with page.expect_download(timeout=60000) as dl_info:
+                download_link.click()
+            final_path = os.path.join(os.path.dirname(partial_path), "final_complete.pdf")
+            dl_info.value.save_as(final_path)
+            log("Final file saved to %s (%d pages)" % (final_path, len(fitz.open(final_path))))
         elif status == "partial":
             if next_page > resume_floor:
                 log("SUCCESS: resume continued correctly, made real progress "
                     "(%d -> %d), still needs more cycles." % (resume_floor, next_page))
+                download_link = page.locator("#pdf-out a").first
+                with page.expect_download(timeout=60000) as dl_info:
+                    download_link.click()
+                new_partial_path = os.path.join(
+                    os.path.dirname(partial_path), "partial_next%d.pdf" % next_page)
+                dl_info.value.save_as(new_partial_path)
+                log("Downloaded new partial to %s (%d pages)" % (
+                    new_partial_path, len(fitz.open(new_partial_path))))
             else:
                 log("BUG: next_page (%s) did not advance past floor (%d)." % (next_page, resume_floor))
         else:
