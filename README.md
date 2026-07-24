@@ -1,6 +1,6 @@
 # pdf-english-fiction-annotator
 
-为英文小说 PDF 添加**简明中文词汇注释**，注释显示在词语右侧扩展出的页边空白处，**不遮挡原文**。
+为英文小说 PDF 添加**中文伴读注释**，注释显示在词语右侧扩展出的页边空白处，**不遮挡原文**。
 Add concise, non-obstructive **Chinese vocabulary annotations** to English-fiction
 PDFs. Glosses are placed in a widened right margin, aligned to each word, and the
 original page content, links and bookmarks are preserved untouched.
