@@ -81,14 +81,14 @@ _LEVEL_RANK = {"A2": 0, "B1": 1, "B2": 2, "C1": 3}
 
 
 # --- Literary background artwork -----------------------------------------
-# A soft, blurred wash derived from the app icon (a misty Jiangnan water town
-# with a moon-gate arch, a stone bridge and a stack of English classics),
+# The app icon itself (a misty Jiangnan water town with a moon-gate arch, a
+# stone bridge and a stack of English classics), used as-is with no blur,
 # embedded as a data-URI so no external image hosting is required.
 _BG_ASSET = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "assets", "background.jpg")
+    os.path.dirname(os.path.abspath(__file__)), "assets", "background.png")
 with open(_BG_ASSET, "rb") as _bg_f:
     _BACKGROUND_DATA_URI = (
-        "data:image/jpeg;base64,"
+        "data:image/png;base64,"
         + base64.b64encode(_bg_f.read()).decode("ascii"))
 
 
@@ -375,10 +375,11 @@ gradio-app {
   min-width: 720px !important;
   margin: 0 auto !important;
   padding-bottom: 6px !important;
+  overflow: visible !important;
 }
 
 /* ---- Header (brush calligraphy) ---- */
-#app-header { position: relative; text-align: center; padding: 10px 20px 2px; color: #33402c; }
+#app-header { position: relative; overflow: visible; text-align: center; padding: 10px 20px 2px; color: #33402c; }
 #app-header h1 {
   font-family: "Ma Shan Zheng", "Noto Serif SC", cursive;
   font-size: 42px; line-height: 1.1; letter-spacing: 9px;
@@ -386,7 +387,7 @@ gradio-app {
   text-shadow: 0 2px 0 rgba(255,255,255,0.5), 0 8px 22px rgba(40,60,30,0.28);
 }
 #app-header .ah-stamp {
-  position: absolute !important; top: 4px; right: 18px;
+  position: absolute !important; top: 4px; right: -78px; z-index: 6;
   display: inline-block !important;
   writing-mode: vertical-rl !important; text-orientation: upright !important;
   background: #a5352f; color: #fbe7cf;
