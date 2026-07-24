@@ -1,58 +1,56 @@
 === Render webapp test log ===
-[1.6s] Navigating to https://pdf-english-fiction-annotator.onrender.com/
-[10.9s] Page loaded, title='伴读 · 英文原著中文注释'
-[11.4s] Initial screenshot saved
-[14.4s] File uploaded: D:\写作\Book\01_OceanofPDF.com_The_Gathering_-_David_Tod_Roy.pdf
-[16.9s] Clicked submit button
-[31.9s] Looks like output may be ready.
-[44.5s] CONSOLE[warning]: Method not implemented.
-[44.5s] CONSOLE[warning]: Method not implemented.
-[47.3s] PROGRESS: 始 注 释 取 回 译 注 30.4s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[47.3s] Looks like output may be ready.
-[62.7s] PROGRESS: 始 注 释 取 回 译 注 45.8s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[62.7s] Looks like output may be ready.
-[78.0s] PROGRESS: 始 注 释 取 回 译 注 61.1s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[78.0s] Looks like output may be ready.
-[93.4s] PROGRESS: 始 注 释 取 回 译 注 76.5s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[93.4s] Looks like output may be ready.
-[108.8s] PROGRESS: 始 注 释 取 回 译 注 91.9s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[108.8s] Looks like output may be ready.
-[124.1s] PROGRESS:  注 释 取 回 译 注 107.2s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[124.1s] Looks like output may be ready.
-[139.5s] PROGRESS:  注 释 取 回 译 注 122.6s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[139.5s] Looks like output may be ready.
-[154.9s] PROGRESS:  注 释 取 回 译 注 138.0s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[154.9s] Looks like output may be ready.
-[170.2s] PROGRESS:  注 释 取 回 译 注 153.3s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[170.2s] Looks like output may be ready.
-[185.6s] PROGRESS:  注 释 取 回 译 注 168.7s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[185.6s] Looks like output may be ready.
-[201.0s] PROGRESS:  注 释 取 回 译 注 184.1s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[201.0s] Looks like output may be ready.
-[216.3s] PROGRESS:  注 释 取 回 译 注 199.4s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[216.3s] Looks like output may be ready.
-[231.7s] PROGRESS:  注 释 取 回 译 注 214.8s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[231.7s] Looks like output may be ready.
-[247.1s] PROGRESS:  注 释 取 回 译 注 230.2s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[247.1s] Looks like output may be ready.
-[262.5s] PROGRESS:  注 释 取 回 译 注 245.6s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[262.5s] Looks like output may be ready.
-[277.8s] PROGRESS:  注 释 取 回 译 注 260.9s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[277.8s] Looks like output may be ready.
-[293.2s] PROGRESS:  注 释 取 回 译 注 276.3s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[293.2s] Looks like output may be ready.
-[308.5s] PROGRESS:  注 释 取 回 译 注 291.6s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[308.5s] Looks like output may be ready.
-[323.9s] PROGRESS:  注 释 取 回 译 注 307.0s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[323.9s] Looks like output may be ready.
-[339.3s] PROGRESS:  注 释 取 回 译 注 322.4s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[339.3s] Looks like output may be ready.
-[354.7s] PROGRESS:  注 释 取 回 译 注 337.8s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[354.7s] Looks like output may be ready.
-[370.1s] PROGRESS:  注 释 取 回 译 注 353.2s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[370.1s] Looks like output may be ready.
-[385.4s] PROGRESS:  注 释 取 回 译 注 368.5s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[385.4s] Looks like output may be ready.
-[400.8s] PROGRESS:  注 释 取 回 译 注 383.9s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
-[400.8s] Looks like output may be ready.
-[409.3s] PAGE CLOSED
+[2.1s] Navigating to https://pdf-english-fiction-annotator.onrender.com/
+[10.5s] Page loaded, title='伴读 · 英文原著中文注释'
+[10.9s] Initial screenshot saved
+[13.7s] File uploaded: D:\写作\Book\01_OceanofPDF.com_The_Gathering_-_David_Tod_Roy.pdf
+[16.3s] Clicked submit button
+[31.3s] Looks like output may be ready.
+[38.0s] CONSOLE[warning]: Method not implemented.
+[38.1s] CONSOLE[warning]: Method not implemented.
+[46.8s] PROGRESS: 始 注 释 取 回 译 注 30.5s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[46.8s] Looks like output may be ready.
+[62.1s] PROGRESS: 始 注 释 取 回 译 注 45.8s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[62.1s] Looks like output may be ready.
+[77.5s] PROGRESS: 始 注 释 取 回 译 注 61.2s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[77.5s] Looks like output may be ready.
+[92.9s] PROGRESS: 始 注 释 取 回 译 注 76.6s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[92.9s] Looks like output may be ready.
+[108.3s] PROGRESS: 始 注 释 取 回 译 注 92.0s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[108.3s] Looks like output may be ready.
+[123.7s] PROGRESS:  注 释 取 回 译 注 107.4s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[123.7s] Looks like output may be ready.
+[139.1s] PROGRESS:  注 释 取 回 译 注 122.8s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[139.1s] Looks like output may be ready.
+[154.4s] PROGRESS:  注 释 取 回 译 注 138.1s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[154.4s] Looks like output may be ready.
+[169.8s] PROGRESS:  注 释 取 回 译 注 153.5s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[169.8s] Looks like output may be ready.
+[185.2s] PROGRESS:  注 释 取 回 译 注 168.9s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[185.2s] Looks like output may be ready.
+[200.5s] PROGRESS:  注 释 取 回 译 注 184.2s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[200.5s] Looks like output may be ready.
+[215.9s] PROGRESS:  注 释 取 回 译 注 199.6s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[215.9s] Looks like output may be ready.
+[231.3s] PROGRESS:  注 释 取 回 译 注 215.0s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[231.3s] Looks like output may be ready.
+[246.6s] PROGRESS:  注 释 取 回 译 注 230.3s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[246.6s] Looks like output may be ready.
+[262.0s] PROGRESS:  注 释 取 回 译 注 245.7s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[262.0s] Looks like output may be ready.
+[277.4s] PROGRESS:  注 释 取 回 译 注 261.1s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[277.4s] Looks like output may be ready.
+[292.8s] PROGRESS:  注 释 取 回 译 注 276.5s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[292.8s] Looks like output may be ready.
+[308.1s] PROGRESS:  注 释 取 回 译 注 291.8s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[308.1s] Looks like output may be ready.
+[323.5s] PROGRESS:  注 释 取 回 译 注 307.2s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[323.5s] Looks like output may be ready.
+[338.9s] PROGRESS:  注 释 取 回 译 注 322.6s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[338.9s] Looks like output may be ready.
+[354.2s] PROGRESS:  注 释 取 回 译 注 338.0s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[354.2s] Looks like output may be ready.
+[369.6s] PROGRESS:  注 释 取 回 译 注 353.3s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[369.6s] Looks like output may be ready.
+[385.0s] PROGRESS:  注 释 取 回 译 注 368.7s 正在读取词汇并生成注释… - 40.0% 下载带注释的 PDF 免费开源 · MIT 许可证 · 词典来自 ECDICT
+[385.0s] Looks like output may be ready.
+[394.0s] PAGE CLOSED

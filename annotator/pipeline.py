@@ -115,6 +115,18 @@ def annotate_pdf(
             # Import the finished page into the output document.
             out.insert_pdf(page_doc, from_page=0, to_page=0)
             page_doc.close()
+            # Force MuPDF to release its internal store (font/image/glyph
+            # cache) after every page. This native store is not fully
+            # reclaimed by Document.close() alone and otherwise grows
+            # across the many repeated fitz.open()/close() cycles in this
+            # single long-running process -- observed in practice as the
+            # progress bar going from a steady ~1-2s/page cadence to a
+            # permanent-looking freeze around page ~830/875 despite no
+            # single page being inherently slow. store_shrink(100) is cheap
+            # (just evicts cached objects) relative to building a page, so
+            # doing it every page bounds this cost to a per-process
+            # constant regardless of book length.
+            fitz.TOOLS.store_shrink(100)
 
             if annotated:
                 stats["pages_annotated"] += 1
@@ -371,6 +383,10 @@ def _annotate_chunk(
             page_doc, annotated = _build_page(src[pno], selector, renderer, config, pno)
             out.insert_pdf(page_doc, from_page=0, to_page=0)
             page_doc.close()
+            # See the matching comment in annotate_pdf(): bound MuPDF's
+            # native store growth across repeated open/close cycles even
+            # within a single chunk/worker.
+            fitz.TOOLS.store_shrink(100)
             if annotated:
                 pages_annotated += 1
                 annotations += annotated
