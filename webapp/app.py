@@ -476,6 +476,14 @@ gradio-app {
 #pdf-in .wrap, #pdf-in .file-preview, #pdf-out .wrap, #pdf-out .file-preview {
   min-height: 140px !important;
 }
+#pdf-in .wrap, #pdf-out .wrap {
+  font-family: "Ma Shan Zheng", "Noto Serif SC", cursive !important;
+  font-size: 20px !important; letter-spacing: 2px; color: #37472d !important;
+}
+#pdf-in .wrap .or, #pdf-out .wrap .or {
+  font-family: "Ma Shan Zheng", "Noto Serif SC", cursive !important;
+  color: #6a7a5c !important;
+}
 
 /* ---- Run button (brush style) ---- */
 #run-btn button, button.primary, .primary {
@@ -558,8 +566,35 @@ TOOLTIP_JS = """
     });
     return true;
   };
+  // Gradio's built-in upload placeholder ("Drop File Here" / "- or -" /
+  // "Click to Upload") is rendered as bare text nodes inside the widget's
+  // ``.wrap`` element, so it can't be swapped via a component prop -- walk
+  // the text nodes and replace them with the calligraphy-styled Chinese
+  // wording used everywhere else on the page.
+  const uploadText = {
+    "Drop File Here": "将 文 件 拖 放 至 此",
+    "- or -": "— 或 —",
+    "Click to Upload": "点 击 上 传",
+  };
+  const attachUploadText = () => {
+    document.querySelectorAll("#pdf-in .wrap, #pdf-out .wrap").forEach(wrap => {
+      if (wrap.dataset.cjkUpload) return;
+      const walker = document.createTreeWalker(wrap, NodeFilter.SHOW_TEXT);
+      let node;
+      let replaced = false;
+      while ((node = walker.nextNode())) {
+        const key = (node.textContent || "").trim();
+        if (uploadText[key]) {
+          node.textContent = uploadText[key];
+          replaced = true;
+        }
+      }
+      if (replaced) wrap.dataset.cjkUpload = '1';
+    });
+  };
   attach();
-  const obs = new MutationObserver(() => { attach(); });
+  attachUploadText();
+  const obs = new MutationObserver(() => { attach(); attachUploadText(); });
   obs.observe(document.body, { childList: true, subtree: true });
 }
 """.replace("__MAP__", _DESC_JS_MAP)
