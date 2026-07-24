@@ -334,7 +334,20 @@ def annotate_pdf(
             toc = src.get_toc(simple=False)
             if toc:
                 out.set_toc(toc)
-            out.save(output_path, garbage=4, deflate=True)
+            # NOTE: intentionally *not* using ``garbage=4`` here, for the
+            # same reason documented above at the periodic checkpoints:
+            # it forces a full duplicate-object scan/renumber across every
+            # object in the document, which scales badly with page count
+            # and is by far the most expensive GC level. On a CPU-throttled
+            # host (Render's free tier) this reproduced as the progress bar
+            # freezing permanently at the very end of the run (e.g. "875 /
+            # 875 页 - 98%") on the real 875-page target book -- effectively
+            # the same freeze the checkpoints used to hit at page ~80/160,
+            # just moved to the final save covering the *entire* book
+            # instead of one chunk. Dropping ``garbage`` (default 0) keeps
+            # the ``deflate`` compression benefit while making the save
+            # O(pages) instead of touching every object for dedup.
+            out.save(output_path, deflate=True)
         else:
             # Partial result: this file will be resumed and re-saved fully
             # later, so skip the expensive garbage=4 dedup pass (same
@@ -741,7 +754,11 @@ def annotate_pdf_parallel(
             chunk_doc.close()
         if toc:
             out.set_toc(toc)
-        out.save(output_path, garbage=4, deflate=True)
+        # See the matching comment in annotate_pdf(): ``garbage=4`` forces a
+        # full duplicate-object scan across the whole merged document, which
+        # scales badly with page count and can look like a permanent freeze
+        # on a CPU-throttled host for a large book. Drop it here too.
+        out.save(output_path, deflate=True)
         out.close()
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
