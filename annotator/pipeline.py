@@ -163,6 +163,18 @@ def annotate_pdf(
     # previous, time-boxed call) -- skip rebuilding them and just append new
     # ones after them.
     resume_start = len(out) if resume_from_path else 0
+    if resume_from_path:
+        # A late-book resume file (e.g. 800+ already-annotated pages, tens
+        # of MB of vector labels/underlines) measurably spikes RSS the
+        # moment it's opened -- confirmed live on Render's free tier (512MB
+        # limit) via its own memory-metrics API: idle ~160-190MB, jumping to
+        # 400-520MB within ~1 minute of a resume request starting, then the
+        # container gets OOM-killed before a single checkpoint has a chance
+        # to fire (indistinguishable in the app's own logs from the
+        # platform's unrelated periodic restarts). fitz.TOOLS.store_shrink
+        # right after opening it evicts whatever MuPDF cached just parsing
+        # the file, trimming peak memory before any new work begins.
+        fitz.TOOLS.store_shrink(100)
     # Ping-pong temp files derived from output_path so concurrent runs (e.g.
     # multiple webapp requests, each with their own unique output_path) never
     # collide on the same checkpoint file.
@@ -171,6 +183,14 @@ def annotate_pdf(
     pages_since_checkpoint = 0
     t_start = time.monotonic()
     t_last_checkpoint = t_start
+    # On a resume, force a checkpoint after just the *first* newly-built
+    # page instead of waiting for the normal 80-page/60s thresholds. This
+    # bounds how long the process holds both the freshly-loaded, already
+    # bulky ``out`` document *and* the newly annotated page in memory at
+    # once to a single page, and the checkpoint's save+reopen cycle
+    # (below) compacts ``out`` back down immediately afterwards --
+    # directly targeting the early-resume memory spike described above.
+    force_next_checkpoint = resume_from_path is not None
 
     stats = {
         "input": input_path,
@@ -231,11 +251,16 @@ def annotate_pdf(
                 break
 
             pages_since_checkpoint += 1
-            should_checkpoint = pages_since_checkpoint >= _CHECKPOINT_EVERY_PAGES or (
-                pages_since_checkpoint > 0
-                and (time.monotonic() - t_last_checkpoint) >= _CHECKPOINT_EVERY_SECONDS
+            should_checkpoint = (
+                pages_since_checkpoint >= _CHECKPOINT_EVERY_PAGES
+                or (
+                    pages_since_checkpoint > 0
+                    and (time.monotonic() - t_last_checkpoint) >= _CHECKPOINT_EVERY_SECONDS
+                )
+                or force_next_checkpoint
             )
             if should_checkpoint and not is_last_page:
+                force_next_checkpoint = False
                 # NOTE: intentionally *not* using ``garbage=4`` here (unlike
                 # the final save below). ``garbage=4`` makes MuPDF do a full
                 # duplicate-object scan/renumber across the whole document,
