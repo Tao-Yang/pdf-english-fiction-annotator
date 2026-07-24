@@ -386,13 +386,15 @@ gradio-app {
   text-shadow: 0 2px 0 rgba(255,255,255,0.5), 0 8px 22px rgba(40,60,30,0.28);
 }
 #app-header .ah-stamp {
-  position: absolute; top: 4px; right: 18px;
-  writing-mode: vertical-rl; text-orientation: upright;
+  position: absolute !important; top: 4px; right: 18px;
+  display: inline-block !important;
+  writing-mode: vertical-rl !important; text-orientation: upright !important;
   background: #a5352f; color: #fbe7cf;
   font-family: "Ma Shan Zheng", "Noto Serif SC", serif;
   font-size: 18px; letter-spacing: 6px; padding: 12px 7px;
   border-radius: 6px; border: 2px solid rgba(251,231,207,0.55);
   box-shadow: 0 4px 12px rgba(120,30,25,0.35); transform: rotate(-2deg);
+  white-space: nowrap; line-height: 1.5;
 }
 
 /* ---- Dictionary picker: calligraphy tiles, multi-select ---- */
