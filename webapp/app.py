@@ -659,8 +659,13 @@ def _run_annotate_worker(
     """
 
     def _on_checkpoint(ckpt_path: str, pno: int, total: int) -> None:
+        print("[subprocess] checkpoint at page %d/%d" % (pno + 1, total), flush=True)
         msg_queue.put(("checkpoint", ckpt_path, pno, total))
 
+    print(
+        "[subprocess] worker starting, pid=%d, resume=%s" % (os.getpid(), bool(resume_from_path)),
+        flush=True,
+    )
     try:
         result = annotate_pdf(
             input_path=input_path,
@@ -672,6 +677,7 @@ def _run_annotate_worker(
             time_budget_seconds=time_budget_seconds,
             on_checkpoint=_on_checkpoint,
         )
+        print("[subprocess] worker finished, finished=%s" % result.finished, flush=True)
         msg_queue.put((
             "done",
             result.output_path,
@@ -680,6 +686,7 @@ def _run_annotate_worker(
             result.total_pages,
         ))
     except Exception as exc:  # noqa: BLE001 - surfaced to the parent below
+        print("[subprocess] worker raised: %r" % exc, flush=True)
         msg_queue.put(("error", str(exc)))
 
 
@@ -759,6 +766,7 @@ def annotate(pdf_file, dictionary, start_page, resume_pdf, progress=gr.Progress(
         daemon=True,
     )
     proc.start()
+    print("[parent] spawned annotate worker pid=%s" % proc.pid, flush=True)
 
     prev_checkpoint_copy = None
     result = None
@@ -777,6 +785,11 @@ def annotate(pdf_file, dictionary, start_page, resume_pdf, progress=gr.Progress(
                 error = (
                     "处理进程意外终止（很可能是内存不足）。"
                     "如果上面已经生成了部分结果，可以下载后继续续传。"
+                )
+                print(
+                    "[parent] worker pid=%s exited unexpectedly (exitcode=%s)"
+                    % (proc.pid, proc.exitcode),
+                    flush=True,
                 )
                 break
             continue
