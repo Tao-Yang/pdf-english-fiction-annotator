@@ -912,7 +912,7 @@ def _build_demo() -> gr.Blocks:
                         split_btn = gr.Button("拆 分", variant="primary")
                     with gr.Column(scale=1, elem_classes=["paper-card"]):
                         gr.HTML("<div class='card-title'>取 回 分 卷</div>")
-                        split_zip_out = gr.File(label="下载拆分后的 zip")
+                        split_zip_out = gr.File(label="下载拆分后的 zip", elem_id="split-zip-out")
                         split_status_md = gr.Markdown()
 
                 split_btn.click(
@@ -934,7 +934,7 @@ def _build_demo() -> gr.Blocks:
                         merge_btn = gr.Button("合 并", variant="primary")
                     with gr.Column(scale=1, elem_classes=["paper-card"]):
                         gr.HTML("<div class='card-title'>取 回 完 整 译 本</div>")
-                        merge_pdf_out = gr.File(label="下载合并后的 PDF")
+                        merge_pdf_out = gr.File(label="下载合并后的 PDF", elem_id="merge-pdf-out")
                         merge_status_md = gr.Markdown()
 
                 merge_btn.click(
