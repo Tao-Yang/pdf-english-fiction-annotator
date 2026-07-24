@@ -17,6 +17,7 @@ For each body page:
 The output PDF has the same page count and navigation as the source.
 """
 
+import gc
 import json
 import multiprocessing
 import os
@@ -175,6 +176,7 @@ def annotate_pdf(
         # right after opening it evicts whatever MuPDF cached just parsing
         # the file, trimming peak memory before any new work begins.
         fitz.TOOLS.store_shrink(100)
+        gc.collect()
     # Ping-pong temp files derived from output_path so concurrent runs (e.g.
     # multiple webapp requests, each with their own unique output_path) never
     # collide on the same checkpoint file.
@@ -282,6 +284,17 @@ def annotate_pdf(
                 out.save(ckpt_path, deflate=True)
                 out.close()
                 out = fitz.open(ckpt_path)
+                # Reopening the checkpoint we *just* saved is exactly as
+                # expensive, memory-wise, as the initial resume-file open
+                # above (it's the same large, already-annotated document,
+                # freshly re-parsed) -- confirmed live: this reopen alone
+                # spiked RSS to ~450MB and triggered an OOM kill on Render's
+                # free tier even with the resume-open shrink already in
+                # place, immediately after the very first forced checkpoint
+                # delivered successfully. Shrink here too, for the same
+                # reason.
+                fitz.TOOLS.store_shrink(100)
+                gc.collect()
                 ckpt_toggle = 1 - ckpt_toggle
                 pages_since_checkpoint = 0
                 t_last_checkpoint = time.monotonic()
