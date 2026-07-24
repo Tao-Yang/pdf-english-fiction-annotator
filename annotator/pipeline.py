@@ -84,31 +84,42 @@ class _Placement:
         self.accent_rgb = accent_rgb
 
 
-# How many pages to accumulate in memory before flushing the in-progress
-# output document to disk and reopening it. Without this, ``out`` (a
-# fitz.Document holding every already-built page, including rasterised PNG
-# labels) grows roughly linearly with book length and can exceed a few
-# hundred MB on a full-length novel -- easily enough to OOM a
-# memory-constrained host (e.g. Render's free 512MB tier), which looks to the
-# user like the progress bar freezing partway through. Periodically saving
-# to a temp file and reopening bounds memory to a roughly constant ceiling
-# regardless of how many pages remain.
+# How many pages to accumulate in memory before flushing the current batch
+# to its own small on-disk file and starting a fresh, empty batch. Without
+# this, ``out`` (a fitz.Document holding every page built so far in the
+# current batch, including rasterised PNG labels) grows roughly linearly
+# with book length and can exceed a few hundred MB on a full-length novel --
+# easily enough to OOM a memory-constrained host (e.g. Render's free 512MB
+# tier), which looks to the user like the progress bar freezing partway
+# through.
+#
+# Each flush only ever saves the *current batch*, never the whole book so
+# far. An earlier version of this pipeline instead kept reopening and
+# re-saving one single, ever-growing document at every checkpoint, so each
+# successive checkpoint re-serialized more pages than the last (checkpoint N
+# touched all N * _CHECKPOINT_EVERY_PAGES pages built so far). On the real
+# 875-page target book that made later checkpoints (e.g. the 8th, around
+# page 640) take dramatically longer than the first ones -- looking exactly
+# like a permanent freeze, just at a different page each run depending on
+# exactly when the page-count/elapsed-time thresholds fired. All batches are
+# concatenated into the actual output exactly once, at the very end (see
+# ``_assemble`` below), so total save work across the whole run stays
+# roughly constant regardless of how often we flush.
 #
 # Measured on the real 875-page target file (web-upload config: dense
-# annotation starting at page 1, disk-backed SQLite dictionary): baseline
-# settles around 220MB and grows ~1.5MB/page between checkpoints. 80 pages
-# between checkpoints keeps the peak comfortably under 400MB (well inside a
-# 512MB host) while halving checkpoint save/reopen overhead versus a smaller
-# interval, since each checkpoint re-compacts the whole accumulated document.
+# annotation starting at page 1, disk-backed SQLite dictionary): the
+# in-memory batch settles around 220MB baseline and grows ~1.5MB/page. 80
+# pages per batch keeps the peak comfortably under 400MB (well inside a
+# 512MB host).
 _CHECKPOINT_EVERY_PAGES = 80
 
 # A resume batch shorter than _CHECKPOINT_EVERY_PAGES (e.g. the last 46 pages
-# of a book) would otherwise never reach a single checkpoint before finishing
-# -- so a mid-flight platform restart during that final short batch silently
-# drops the whole request with nothing delivered, same as if on_checkpoint
-# didn't exist at all (confirmed in practice against the live Render app).
-# Also checkpoint on elapsed wall-clock time since the last checkpoint (or
-# start), whichever comes first, so short trailing batches are covered too.
+# of a book) would otherwise never reach a single flush before finishing --
+# not a memory problem (a short batch is small either way), but it would
+# mean an ``on_checkpoint`` caller (if any -- none currently) got nothing
+# until the very end. Also flush on elapsed wall-clock time since the last
+# flush (or start), whichever comes first, so short trailing batches are
+# covered too.
 _CHECKPOINT_EVERY_SECONDS = 60.0
 
 
@@ -186,40 +197,32 @@ def annotate_pdf(
     )
 
     src = fitz.open(input_path)
-    out = fitz.open(resume_from_path) if resume_from_path else fitz.open()
-    # If resuming, these pages are already fully annotated (they came from a
-    # previous, time-boxed call) -- skip rebuilding them and just append new
-    # ones after them.
-    resume_start = len(out) if resume_from_path else 0
+    # Segments are on-disk, already-finished, already-saved page ranges (in
+    # book order); the optional caller-supplied ``resume_from_path`` (if
+    # any) counts as the first one. ``out`` only ever holds pages built
+    # since the *last* flush -- never the whole book -- see the note above
+    # ``_CHECKPOINT_EVERY_PAGES``. All segments (plus whatever's left in
+    # ``out``) are concatenated into the real deliverable by ``_assemble``,
+    # exactly once, whenever one is actually needed.
+    segment_paths: List[str] = [resume_from_path] if resume_from_path else []
+    resume_start = 0
     if resume_from_path:
-        # A late-book resume file (e.g. 800+ already-annotated pages, tens
-        # of MB of vector labels/underlines) measurably spikes RSS the
-        # moment it's opened -- confirmed live on Render's free tier (512MB
-        # limit) via its own memory-metrics API: idle ~160-190MB, jumping to
-        # 400-520MB within ~1 minute of a resume request starting, then the
-        # container gets OOM-killed before a single checkpoint has a chance
-        # to fire (indistinguishable in the app's own logs from the
-        # platform's unrelated periodic restarts). fitz.TOOLS.store_shrink
-        # right after opening it evicts whatever MuPDF cached just parsing
-        # the file, trimming peak memory before any new work begins.
+        # Only opened long enough to read the page count, then closed --
+        # never re-parsed again until the final merge -- so a late-book
+        # resume file no longer spikes RSS the moment the run starts.
+        # (Previously, this file was kept open and reused as the growing
+        # ``out`` document for the rest of the run: confirmed live on
+        # Render's free tier (512MB limit) that this alone jumped RSS from
+        # an idle ~160-190MB to 400-520MB within ~1 minute, OOM-killing the
+        # container before a single checkpoint could fire.)
+        with fitz.open(resume_from_path) as _resume_doc:
+            resume_start = len(_resume_doc)
         fitz.TOOLS.store_shrink(100)
         gc.collect()
-    # Ping-pong temp files derived from output_path so concurrent runs (e.g.
-    # multiple webapp requests, each with their own unique output_path) never
-    # collide on the same checkpoint file.
-    ckpt_paths = [output_path + ".ckpt0.tmp", output_path + ".ckpt1.tmp"]
-    ckpt_toggle = 0
+    out = fitz.open()
     pages_since_checkpoint = 0
     t_start = time.monotonic()
     t_last_checkpoint = t_start
-    # On a resume, force a checkpoint after just the *first* newly-built
-    # page instead of waiting for the normal 80-page/60s thresholds. This
-    # bounds how long the process holds both the freshly-loaded, already
-    # bulky ``out`` document *and* the newly annotated page in memory at
-    # once to a single page, and the checkpoint's save+reopen cycle
-    # (below) compacts ``out`` back down immediately afterwards --
-    # directly targeting the early-resume memory spike described above.
-    force_next_checkpoint = resume_from_path is not None
 
     stats = {
         "input": input_path,
@@ -233,6 +236,34 @@ def annotate_pdf(
     finished = True
     next_start_page = stats["pages"]
 
+    def _flush_segment() -> None:
+        """Save the current (small, since-last-flush) batch to its own
+        on-disk file and start a fresh, empty ``out`` for the next batch.
+        Cost is O(batch size), not O(pages built so far)."""
+        nonlocal out
+        seg_path = "%s.seg%d.tmp" % (output_path, len(segment_paths))
+        out.save(seg_path, deflate=True)
+        out.close()
+        segment_paths.append(seg_path)
+        out = fitz.open()
+        fitz.TOOLS.store_shrink(100)
+        gc.collect()
+
+    def _assemble(tail: fitz.Document) -> fitz.Document:
+        """Concatenate every finished segment (in book order) plus
+        whatever's in ``tail`` (the current, not-yet-flushed batch) into
+        one fresh document. This is the only place that ever touches every
+        page in the book at once -- everywhere else works one small batch
+        at a time."""
+        merged = fitz.open()
+        for seg_path in segment_paths:
+            seg = fitz.open(seg_path)
+            merged.insert_pdf(seg)
+            seg.close()
+        if len(tail):
+            merged.insert_pdf(tail)
+        return merged
+
     try:
         for pno in range(len(src)):
             if pno < resume_start:
@@ -242,7 +273,7 @@ def annotate_pdf(
                 src_page, selector, renderer, config, pno,
                 literary_translator=literary_translator,
             )
-            # Import the finished page into the output document.
+            # Import the finished page into the current batch.
             out.insert_pdf(page_doc, from_page=0, to_page=0)
             page_doc.close()
             # Force MuPDF to release its internal store (font/image/glyph
@@ -287,79 +318,53 @@ def annotate_pdf(
                     pages_since_checkpoint > 0
                     and (time.monotonic() - t_last_checkpoint) >= _CHECKPOINT_EVERY_SECONDS
                 )
-                or force_next_checkpoint
             )
             if should_checkpoint and not is_last_page:
-                force_next_checkpoint = False
-                # NOTE: intentionally *not* using ``garbage=4`` here (unlike
-                # the final save below). ``garbage=4`` makes MuPDF do a full
-                # duplicate-object scan/renumber across the whole document,
-                # which is the most expensive garbage-collection level and
-                # scales badly with page/object count -- and this call is
-                # only an intermediate checkpoint (immediately reopened),
-                # not the final deliverable, so a fully garbage-collected
-                # file buys nothing here. On a CPU-throttled host (e.g.
-                # Render's free tier, which grants only a fraction of one
-                # vCPU), this made each checkpoint take long enough to look
-                # exactly like the progress bar permanently freezing --
-                # reproduced in practice at the very first two checkpoint
-                # boundaries (page ~80 and ~160) on the real 875-page target
-                # book. Dropping ``garbage`` (default 0, no object scan)
-                # keeps just the compression (``deflate``) benefit while
-                # making the save O(pages) instead of touching every object
-                # for deduplication.
-                ckpt_path = ckpt_paths[ckpt_toggle]
-                out.save(ckpt_path, deflate=True)
-                out.close()
-                out = fitz.open(ckpt_path)
-                # Reopening the checkpoint we *just* saved is exactly as
-                # expensive, memory-wise, as the initial resume-file open
-                # above (it's the same large, already-annotated document,
-                # freshly re-parsed) -- confirmed live: this reopen alone
-                # spiked RSS to ~450MB and triggered an OOM kill on Render's
-                # free tier even with the resume-open shrink already in
-                # place, immediately after the very first forced checkpoint
-                # delivered successfully. Shrink here too, for the same
-                # reason.
-                fitz.TOOLS.store_shrink(100)
-                gc.collect()
-                ckpt_toggle = 1 - ckpt_toggle
+                # Flush just this batch -- O(batch size), not O(pages built
+                # so far). See the note above ``_CHECKPOINT_EVERY_PAGES``.
+                _flush_segment()
                 pages_since_checkpoint = 0
                 t_last_checkpoint = time.monotonic()
                 if on_checkpoint:
+                    # No current caller passes this (webapp and CLI both
+                    # leave it unset), but keep it correct: build the
+                    # full-so-far deliverable on demand, only when a caller
+                    # actually asks for it.
+                    ckpt_path = output_path + ".ckpt.tmp"
+                    merged = _assemble(out)
+                    merged.save(ckpt_path, deflate=True)
+                    merged.close()
                     on_checkpoint(ckpt_path, pno, len(src))
 
+        # Concatenate every flushed segment plus whatever's left in ``out``
+        # (the final, not-yet-flushed batch) into the real deliverable.
+        # This is the only full-document save in the whole run -- it
+        # happens exactly once, whether the run finished normally or
+        # stopped early because of ``time_budget_seconds``.
+        merged = _assemble(out)
+        out.close()
         if finished:
             # Preserve bookmarks / outline.
             toc = src.get_toc(simple=False)
             if toc:
-                out.set_toc(toc)
-            # NOTE: intentionally *not* using ``garbage=4`` here, for the
-            # same reason documented above at the periodic checkpoints:
-            # it forces a full duplicate-object scan/renumber across every
-            # object in the document, which scales badly with page count
-            # and is by far the most expensive GC level. On a CPU-throttled
-            # host (Render's free tier) this reproduced as the progress bar
-            # freezing permanently at the very end of the run (e.g. "875 /
-            # 875 页 - 98%") on the real 875-page target book -- effectively
-            # the same freeze the checkpoints used to hit at page ~80/160,
-            # just moved to the final save covering the *entire* book
-            # instead of one chunk. Dropping ``garbage`` (default 0) keeps
-            # the ``deflate`` compression benefit while making the save
-            # O(pages) instead of touching every object for dedup.
-            out.save(output_path, deflate=True)
-        else:
-            # Partial result: this file will be resumed and re-saved fully
-            # later, so skip the expensive garbage=4 dedup pass (same
-            # reasoning as the periodic checkpoints above) -- just make sure
-            # it is a valid, complete-so-far PDF the user can download now.
-            out.save(output_path, deflate=True)
-        out.close()
+                merged.set_toc(toc)
+        # NOTE: intentionally *not* using ``garbage=4`` here. It forces a
+        # full duplicate-object scan/renumber across every object in the
+        # document, which scales badly with page count and is by far the
+        # most expensive GC level. On a CPU-throttled host (Render's free
+        # tier) this previously reproduced as the progress bar freezing
+        # permanently -- both at the very end of a run (e.g. "875 / 875 页
+        # - 98%") and, under the old cumulative-checkpoint design, partway
+        # through (e.g. "638 / 875 页 - 82.3%"). Dropping ``garbage``
+        # (default 0) keeps the ``deflate`` compression benefit while
+        # making this O(pages) instead of touching every object for dedup.
+        merged.save(output_path, deflate=True)
+        merged.close()
     finally:
         src.close()
-        for ckpt_path in ckpt_paths:
-            if os.path.exists(ckpt_path):
-                os.remove(ckpt_path)
+        for seg_path in segment_paths:
+            if seg_path != resume_from_path and os.path.exists(seg_path):
+                os.remove(seg_path)
 
     if literary_translator is not None:
         stats["literary_translations"] = (
